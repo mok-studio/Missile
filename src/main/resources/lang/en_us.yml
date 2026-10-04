@@ -1,0 +1,97 @@
+# Missile language file (English)
+# Placeholders use {name}; color codes use &. Switch with config.yml: language: en_us
+
+prefix: "&6[Missile] &f"
+
+console:
+  enabled: "Missile enabled: right-click with TNT to arm the seeker, right-click again to fire"
+  no-command: "plugin.yml is missing the missile command; /missile is unavailable"
+  lang-loaded: "Language file loaded: lang/{locale}.yml ({count} entries)"
+
+command:
+  player-only: "&cThis command can only be used by a player"
+  no-permission: "&cYou do not have permission to use the missile system"
+  unknown-missile: "&cUnknown missile type: &f{input} &7(options: ir / semi / active / semiLOS)"
+  unknown-kind: "&cUnknown lock target type: &f{input} &7(options: player / entity)"
+  selected: "&fType: &e{missile} &7| Lock: &f{kind} &7(initial {min} / max {max} m/s{extra})"
+  status-missile: "&fCurrent type: &e{missile} &7(initial {min} m/s / max {max} m/s{extra})"
+  status-detail: "&7Lock type: &f{kind} &7| Seeker: {seeker} &7| Locked: &f{target}"
+  usage: "&7Usage: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7| right-click with TNT to arm, again to fire"
+  usage-brief: "&7Usage: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7(arg1 defaults to ir, arg2 to player)"
+  detail-beam: " &7| &bbeam riding"
+  detail-decoy: " &7| countermeasure {decoy} {chance}%"
+  state-on: "&aarmed"
+  state-off: "&cnot armed"
+  target-none: "none"
+  enabled: "&aMissiles enabled: right-click with TNT to arm the seeker, again to fire"
+  disabled: "&eMissiles disabled: TNT behaves like vanilla again (placing TNT works)"
+  status-switch: "&7Missile switch: {switch}"
+  switch-on: "&aon"
+  switch-off: "&coff"
+
+kind:
+  player: "player"
+  entity: "entity"
+
+decoy:
+  blaze-rod: "blaze rod"
+  iron-nugget: "iron nugget"
+
+type:
+  infrared: "Infrared"
+  semi-active: "Semi-Active Radar"
+  active: "Active Radar"
+  semi-los: "Semi-Automatic LOS"
+
+seeker:
+  status: "&6{missile} &7| &fTarget:{kind} &7| {lock} &7| &fright-click to fire"
+  status-beam: "&6{missile} &7| &bbeam riding &7| &fright-click to fire"
+  lock-search: "&csearching"
+  lock-found: "&alocked &f{target}"
+  closed: "&7Seeker closed (hold TNT)"
+  need-illumination: "&c{missile} needs a visible {kind} to keep illuminating; not fired"
+  launched: "&aFired {missile} &7[{kind}]{detail}"
+  launched-beam: " &7beam riding"
+  launched-none: " &7(no initial lock, self-search)"
+  launched-target: " &7→ &f{target}"
+  designate-switch: "&aIllumination target switched: &f{target}"
+
+missile:
+  decoy-infrared: "&cIR seeker lost lock; turning to the blaze rod heat source: &f{target}"
+  decoy-active: "&eActive radar jammed by iron nugget; lock lost, re-searching"
+  decoy-semi-active: "&eSemi-active radar jammed by iron nugget; illumination link broken"
+
+rwr:
+  bossbar-track: "&e⚠ TRACKED &f{dir}"
+  bossbar-track-multi: "&e⚠ TRACKED &f{dir} &7×{count}"
+  bossbar-missile: "&c⚠ MISSILE &f{dir}"
+  bossbar-missile-multi: "&c⚠ MISSILE &f{dir} &7×{count}"
+  # Bearing arrows: your facing is up (↑), 8 sectors clockwise
+  # (12 / 1:30 / 3 / 4:30 / 6 / 7:30 / 9 / 10:30 o'clock)
+  dir-0: "↑"
+  dir-1: "↗"
+  dir-2: "→"
+  dir-3: "↘"
+  dir-4: "↓"
+  dir-5: "↙"
+  dir-6: "←"
+  dir-7: "↖"
+
+# Target filter (/missile filter ...)
+filter:
+  usage: "&7Usage: &f/missile filter <all|clear|list|entity|player|!player|entityId...> &7e.g. &f/missile filter entity zombie !creeper"
+  applied-all: "&aFree targeting restored (filter list is ignored but kept)"
+  applied-clear: "&aFilter list cleared, free targeting restored"
+  applied: "&aFilter updated: &f{mode} &7(see /missile filter list)"
+  mode-all: "free targeting (filter list ignored)"
+  mode-filter: "only targets inside the filter list"
+  error-conflict: "&cCannot use entity and player together (entity already means non-player mobs); run /missile filter clear first"
+  unknown-id: "&cUnknown entity id: &f{input} &7(use zombie or minecraft:zombie)"
+  list-header: "&6[Missile] &fCurrent target filter: &e{mode}"
+  list-types: "&7Include types: &f{include} &7| Exclude types: &f{exclude}"
+  list-ids: "&7Include entities: &f{include} &7| Exclude entities: &f{exclude}"
+  none: "(none)"
+
+# Super active missile (/msl super_active)
+super_active_name: "Super Active Missile"
+super_active_no_perm: "You do not have permission to use the super active missile"

@@ -1,0 +1,12 @@
+# Missile 插件配置
+# 修改后执行 /reload confirm 或重启服务器生效。
+
+# 语言文件：读取 lang/<language>.yml（插件内置 zh_cn 与 en_us，
+# 首次启动会释放到 plugins/Missile/lang/，可直接修改或新增语言）。
+language: zh_cn
+
+explosion:
+  # 战斗部爆炸是否破坏方块。
+  #   true  = 破坏地形并伤害实体（默认，符合 TNT 导弹的直觉）
+  #   false = 只伤害实体、不破坏方块（适合保护型服务器）
+  break-blocks: true

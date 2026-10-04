@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Build-only settings: keeps the Maven local repository inside this workspace so
+  builds never need write access to %USERPROFILE%\.m2.
+  Usage: mvn -s .mvn/local-repo-settings.xml -B clean package
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <localRepository>E:/ser_plugins/Missile/.m2repo</localRepository>
+</settings>

@@ -1,0 +1,21 @@
+# 构建产物
+target/
+*.jar
+
+# 沙箱内的 Maven 本地仓库（约 75 MB，绝不入库）
+.m2repo/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# 发布用打包产物（源码 zip）
+dist/
+
+# 系统杂项
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -1,0 +1,98 @@
+# Missile 语言文件（简体中文）
+# 占位符写 {name}，颜色代码用 & 符号。缺 key 时会返回 key 本身并在控制台告警一次。
+# 新增语言：复制本文件为 lang/<code>.yml，再把 config.yml 的 language 改成对应 code。
+
+prefix: "&6[Missile] &f"
+
+console:
+  enabled: "Missile 已启用：手持 TNT 右键开启导引头，再右键发射"
+  no-command: "plugin.yml 缺少 missile 命令，/missile 不可用"
+  lang-loaded: "语言文件已加载: lang/{locale}.yml（{count} 条文案）"
+
+command:
+  player-only: "&c该命令只能由玩家执行"
+  no-permission: "&c你没有使用导弹系统的权限"
+  unknown-missile: "&c未知型号: &f{input} &7(可选 ir / semi / active / semiLOS)"
+  unknown-kind: "&c未知锁定目标类型: &f{input} &7(可选 player / entity)"
+  selected: "&f型号: &e{missile} &7| 锁定目标: &f{kind} &7(初速 {min} / 最大 {max} m/s{extra})"
+  status-missile: "&f当前型号: &e{missile} &7(初速 {min} m/s / 最大 {max} m/s{extra})"
+  status-detail: "&7锁定目标: &f{kind} &7| 导引头: {seeker} &7| 锁定: &f{target}"
+  usage: "&7用法: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7| 手持 TNT 右键开启导引头，再右键发射"
+  usage-brief: "&7用法: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7(参数1缺省 ir，参数2缺省 player)"
+  detail-beam: " &7| &b视线驾束"
+  detail-decoy: " &7| 干扰 {decoy} {chance}%"
+  state-on: "&a已开启"
+  state-off: "&c未开启"
+  target-none: "无"
+  enabled: "&a导弹已开启：手持 TNT 右键开启导引头，再右键发射"
+  disabled: "&e导弹已关闭：手持 TNT 恢复原版行为（可正常放置 TNT）"
+  status-switch: "&7导弹开关: {switch}"
+  switch-on: "&a开启"
+  switch-off: "&c关闭"
+
+kind:
+  player: "玩家"
+  entity: "生物"
+
+decoy:
+  blaze-rod: "烈焰棒"
+  iron-nugget: "铁粒"
+
+type:
+  infrared: "红外导弹"
+  semi-active: "半主动雷达寻的"
+  active: "主动雷达寻的"
+  semi-los: "半自动指令瞄准线"
+
+seeker:
+  status: "&6{missile} &7| &f目标:{kind} &7| {lock} &7| &f再右键发射"
+  status-beam: "&6{missile} &7| &b视线驾束 &7| &f再右键发射"
+  lock-search: "&c搜索中"
+  lock-found: "&a锁定 &f{target}"
+  closed: "&7导引头已关闭（需要手持 TNT）"
+  need-illumination: "&c{missile}需要视线内{kind}持续照射，未发射"
+  launched: "&a发射 {missile} &7[{kind}]{detail}"
+  launched-beam: " &7视线驾束"
+  launched-none: " &7(无初始锁定，自主搜索)"
+  launched-target: " &7→ &f{target}"
+  designate-switch: "&a照射目标切换: &f{target}"
+
+missile:
+  decoy-infrared: "&c红外导引头脱锁，转向烈焰棒热源: &f{target}"
+  decoy-active: "&e主动雷达被铁粒干扰，脱锁重搜"
+  decoy-semi-active: "&e半主动雷达被铁粒干扰，照射链路中断"
+
+rwr:
+  bossbar-track: "&e⚠ 敌跟踪 &f{dir}"
+  bossbar-track-multi: "&e⚠ 敌跟踪 &f{dir} &7×{count}"
+  bossbar-missile: "&c⚠ 敌导弹 &f{dir}"
+  bossbar-missile-multi: "&c⚠ 敌导弹 &f{dir} &7×{count}"
+  # 方位箭头：以本机朝向为 ↑，顺时针 8 档
+  # （对应 12点钟 / 1:30 / 3点钟 / 4:30 / 6点钟 / 7:30 / 9点钟 / 10:30）
+  dir-0: "↑"
+  dir-1: "↗"
+  dir-2: "→"
+  dir-3: "↘"
+  dir-4: "↓"
+  dir-5: "↙"
+  dir-6: "←"
+  dir-7: "↖"
+
+# 目标筛选（/missile filter ...）
+filter:
+  usage: "&7用法: &f/missile filter <all|clear|list|entity|player|!player|实体ID...> &7例: &f/missile filter entity zombie !creeper"
+  applied-all: "&a已切回自由锁定（忽略筛选列表，列表内容保留）"
+  applied-clear: "&a已清空筛选列表，恢复自由锁定"
+  applied: "&a筛选已更新: &f{mode} &7(/missile filter list 查看明细)"
+  mode-all: "自由锁定（忽略筛选列表）"
+  mode-filter: "仅锁定筛选列表内目标"
+  error-conflict: "&c不能同时使用 entity 与 player（entity 已表示“非玩家生物”）；请先 /missile filter clear 再重新配置"
+  unknown-id: "&c未知实体ID: &f{input} &7(可写 zombie 或 minecraft:zombie)"
+  list-header: "&6[Missile] &f当前目标筛选: &e{mode}"
+  list-types: "&7包含类型: &f{include} &7| 排除类型: &f{exclude}"
+  list-ids: "&7包含实体: &f{include} &7| 排除实体: &f{exclude}"
+  none: "（无）"
+
+# 超级主动弹（/msl super_active）
+super_active_name: "超级主动弹"
+super_active_no_perm: "你没有权限使用超级主动弹"

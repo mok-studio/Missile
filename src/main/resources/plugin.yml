@@ -1,0 +1,21 @@
+name: Missile
+version: '1.0.0'
+main: com.missile.MissilePlugin
+api-version: '1.21'
+description: 'TNT guided missiles: IR / Semi-Active / Active radar homing, plus semiLOS beam riding.'
+authors: [Missile]
+
+commands:
+  missile:
+    description: 'Select missile type / inspect seeker state.'
+    usage: '/missile <ir|semi|active|semiLOS> <player|entity>'
+    aliases: [msl]
+    permission: missile.use
+
+permissions:
+  missile.use:
+    description: 'Use the TNT seeker and every missile type.'
+    default: true
+  missile.superactive:
+    description: 'Use the super active missile (/msl super_active).'
+    default: op
