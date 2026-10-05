@@ -18,7 +18,7 @@ command:
   status-detail: "&7Lock type: &f{kind} &7| Seeker: {seeker} &7| Locked: &f{target}"
   status-ir: "&7IR mode: &f{ir} &7| whitelist lock (usefilter): {filter}"
   status-sa: "&7SA missile lock type: &f{sa}"
-  usage: "&7Usage: &f/missile <ir|semi|active|semiLOS|super_active> [args] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile status"
+  usage: "&7Usage: &f/missile <ir|semi|active|semiLOS|super_active> [args] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile default &7| &f/missile status"
   usage-brief: "&7Admin: &f/missile global <on|off> &7| &f/missile reload &7| right-click with TNT to arm, again to fire"
   detail-beam: " &7| &bbeam riding"
   detail-decoy: " &7| countermeasure {decoy} {chance}%"
@@ -27,6 +27,8 @@ command:
   target-none: "none"
   enabled: "&aMissiles enabled: right-click with TNT to arm the seeker, again to fire"
   disabled: "&eMissiles disabled: TNT behaves like vanilla again (placing TNT works)"
+  # /msl default: resets every missile setting of the sender (type and on/off are kept)
+  default-reset: "&aAll missile settings restored to default (missile type and /msl on|off are kept)"
   status-switch: "&7Missile switch: {switch}"
   switch-on: "&aon"
   switch-off: "&coff"
@@ -43,8 +45,15 @@ command:
   sa-filter-empty: "  &7(empty = unrestricted)"
   sa-filter-entities: "  &7Entities: &f{values}"
   sa-filter-players: "  &7Players: &f{values}"
-  sa-filter-entity: "&aSA safilter now allows entity: &f{id}"
-  sa-filter-player: "&aSA safilter now allows player: &f{name}"
+  # ---- safilter entry editing (1.0.3: /msl super_active <entity|player> set|add|remove|clear) ----
+  # {type} is the class name typed in the command (entity / player); {values} are the entries involved
+  sa-list-set: "&aSA safilter {type} class set to: &f{values}"
+  sa-list-added: "&aSA safilter {type} appended: &f{values}"
+  sa-list-removed: "&aSA safilter {type} removed: &f{values}"
+  sa-list-missing: "&eNot present in safilter: &f{values}"
+  sa-list-none: "&eNothing matched to remove: &f{values}"
+  sa-list-cleared: "&aSA safilter {type} class cleared"
+  sa-list-usage: "&7Usage: &f/msl super_active <entity|player> <set|add|remove|clear> [values...]"
   sa-filter-alias: "&aSA safilter added group alias &f{input} &aexpanded into &f{count} &aentities"
   sa-filter-cleared: "&aSA safilter cleared; back to default (any target)"
   sa-filter-usage: "&7Usage: &f/msl super_active filter <list|clear>"
@@ -61,8 +70,10 @@ kind:
   # ANY: the candidate types come from the filter whitelist (/msl ir ... usefilter)
   any: "player/creature"
 
-# "Target" field: judged by the CONTENT of /msl filter (player class only -> player;
-# entity class only -> entity; both -> mixed). Used by the ActionBar and %msl_target_kind%.
+# "Target" field (%msl_target_kind%): used by the ActionBar and the placeholder.
+# 1.0.3 rules:
+#  · normal missiles - the ACTIVE classes (filter whitelist); no concrete target listed = Any
+#  · super active   - the CONTENT of safilter: entries of both classes = Mixed
 target:
   player: "player"
   entity: "entity"
@@ -131,12 +142,16 @@ maws:
 
 # Target filter (/missile filter ...)
 filter:
-  usage: "&7Usage: &f/missile filter <entity|player|clear|on|off> [set|add|clear] [id...] &7e.g. &f/missile filter entity add zombie skeleton"
+  usage: "&7Usage: &f/missile filter <entity|player|clear|on|off> [set|add|remove|clear] [id...] &7e.g. &f/missile filter entity add zombie skeleton"
   applied: "&aFilter updated: &f{mode} &7(see /missile filter list)"
   applied-type: "&aUpdated &f{type} &afilter: &f{values}"
   cleared-all: "&aAll filter data cleared"
   cleared-entity: "&aEntity filter data cleared"
   cleared-player: "&aPlayer filter data cleared"
+  # ---- remove (1.0.3): drop already-added entries from the list ----
+  removed-type: "&aRemoved from the {type} filter: &f{values}"
+  removed-none: "&eNo such entries in the {type} filter"
+  removed-missing: "&eThese entries were not in the list: &f{values}"
   mode-all: "free targeting (filter data ignored)"
   mode-filter: "only targets inside the filter whitelist"
   error-empty-whitelist: "&cThe whitelist is empty, so filter mode was NOT enabled (an empty whitelist locks nothing). Set it first with /missile filter entity <id> or /missile filter player <name>"

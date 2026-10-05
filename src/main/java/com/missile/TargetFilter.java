@@ -31,13 +31,14 @@ import org.bukkit.entity.Player;
  *
  * <p>命令语义（{@link #parse}）：
  * <pre>
- *   /msl filter entity [set|add|clear] [&lt;实体ID...&gt;]
- *   /msl filter player [set|add|clear] [&lt;玩家名...&gt;]
+ *   /msl filter entity [set|add|remove|clear] [&lt;实体ID...&gt;]
+ *   /msl filter player [set|add|remove|clear] [&lt;玩家名...&gt;]
  *   /msl filter clear           清空全部筛选数据（不动 on/off 开关）
  *   /msl filter on | off        启用 / 停用筛选模式
  * </pre>
- * · {@code set} = 先清空**全部**筛选数据，再写入本次类型与 ID；{@code add} 与"直接跟 ID"都是追加。<br>
- * · {@code set}/{@code add} 之后的 ID 是**必选**的；缺失时该 {@code set}/{@code add} 整体无效（前缀容错）。<br>
+ * · {@code set} = 先清空**全部**筛选数据，再写入本次类型与 ID；{@code add} 与"直接跟 ID"都是追加；
+ *   {@code remove}（1.0.3 新增）从该类名单里摘掉列出的条目；{@code clear} 清空该类。<br>
+ * · {@code set}/{@code add}/{@code remove} 之后的 ID 是**必选**的；缺失时该操作整体无效（前缀容错）。<br>
  * · 只要本次成功写入了类型或 ID，就自动把筛选模式置为 {@code on}（否则命令看起来"没生效"）。
  *
  * <p>关于"任意实体"的边界：本类只接收 {@link LivingEntity}，所以载具、末地水晶、实体方块
@@ -53,6 +54,7 @@ public final class TargetFilter {
     private static final String TYPE_PLAYER = "player";
     private static final String MODE_SET = "set";
     private static final String MODE_ADD = "add";
+    private static final String MODE_REMOVE = "remove";
     private static final String MODE_CLEAR = "clear";
     private static final String MODE_ON = "on";
     private static final String MODE_OFF = "off";
@@ -298,6 +300,31 @@ public final class TargetFilter {
     }
 
     /**
+     * {@code /msl default}：把该玩家的筛选数据**整份丢掉**（回到"自由锁定 + 空名单"）。
+     *
+     * <p>直接删条目（而不是 clear 各字段）可以让存储层的脏检查把它当成一行被删除，
+     * 下次落盘时该玩家就从 {@code filters.json} / MySQL 里消失，回到出厂状态。
+     */
+    public static void resetPlayer(UUID playerId) {
+        if (playerId != null) {
+            playerFilters.remove(playerId);
+        }
+    }
+
+    /**
+     * 该类名单里**已添加的条目**（供 {@code remove} 的 Tab 补全：让玩家看得见能删什么）。
+     *
+     * @param entity {@code true} = 实体 ID 白名单；{@code false} = 玩家名（小写）
+     */
+    public static List<String> entries(UUID playerId, boolean entity) {
+        FilterData data = playerId == null ? null : playerFilters.get(playerId);
+        if (data == null) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(entity ? data.entityIds : data.playerNames);
+    }
+
+    /**
      * 目标是否允许被该玩家锁定（{@code TargetSelector} 的开导引头锁定与弹上重截获两个入口都会调用）。
      *
      * <p>热路径：不做任何对象创建，只读一次 map。
@@ -464,6 +491,16 @@ public final class TargetFilter {
 
         boolean replace = MODE_SET.equals(second);
         boolean append = MODE_ADD.equals(second);
+        boolean drop = MODE_REMOVE.equals(second);
+        if (drop) {
+            // `/msl filter <entity|player> remove <条目...>`：只从该类名单里摘条目，
+            // **不动类别开关、不新建类别、不自动开启筛选模式**（"移除"不应该有副作用）。
+            if (args.length <= 2) {
+                messages.add(Lang.get("filter.error-need-value", "mode", second));
+                return messages;
+            }
+            return removeValues(data, args, entity, head, messages);
+        }
         int firstValue = replace || append ? 2 : 1;
         if ((replace || append) && args.length <= firstValue) {
             // set / add 的必选 ID 缺失 → 该 set / add 无效：不清空、不写入（前缀容错）
@@ -523,6 +560,91 @@ public final class TargetFilter {
         return messages;
     }
 
+    /**
+     * {@code /msl filter <entity|player> remove <条目...>} 的实现（1.0.3 新增）。
+     *
+     * <p>与 {@code add} 的区别有两处，都是刻意的：
+     * <ul>
+     *   <li><b>不改类别开关</b>：删除不应该把某一类"打开"（{@code entity remove zombie}
+     *       不会让"任意生物"生效），也不会顺手把筛选模式打开；</li>
+     *   <li><b>不因"没添加过"而中断</b>：这种条目是"合法输入、只是不在名单里"，
+     *       全部收齐后一次性报告，比遇到第一个就停更实用
+     *       （**未知实体 ID / 找不到的玩家**仍按前缀容错规则中断）。</li>
+     * </ul>
+     * 组别名（如 {@code boat}）同样支持：展开出的 ID 会被逐个移除。
+     */
+    private static List<String> removeValues(FilterData data, String[] args, boolean entity,
+                                            String head, List<String> messages) {
+        List<String> removed = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (int index = 2; index < args.length; index++) {
+            String token = args[index] == null ? "" : args[index].trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            if (entity) {
+                String id = normalizeId(token);
+                if (PLAYER_ENTITY_ID.equals(id)) {
+                    messages.add(Lang.get("filter.error-player-as-entity"));
+                    break;
+                }
+                if (VALID_IDS.contains(id)) {
+                    if (data.entityIds.remove(id)) {
+                        removed.add(id);
+                    } else {
+                        missing.add(id);
+                    }
+                    continue;
+                }
+                List<String> expanded = expandAlias(id);
+                if (expanded.isEmpty()) {
+                    messages.add(Lang.get("filter.unknown-id", "input", token));
+                    break;
+                }
+                boolean any = false;
+                for (String each : expanded) {
+                    any |= data.entityIds.remove(each);
+                }
+                messages.add(Lang.get("filter.alias-expanded", "input", token, "count", expanded.size()));
+                if (any) {
+                    removed.addAll(expanded);
+                } else {
+                    missing.add(token);
+                }
+            } else if (playerListed(data, token)) {
+                removePlayer(data, token);
+                removed.add(token.toLowerCase(Locale.ROOT));
+            } else if (onlinePlayer(token) != null) {
+                missing.add(token);                       // 在线玩家，但名单里本来就没有他
+            } else {
+                messages.add(Lang.get("filter.unknown-player", "input", token));
+                break;
+            }
+        }
+        messages.add(removed.isEmpty()
+                ? Lang.get("filter.removed-none", "type", head)
+                : Lang.get("filter.removed-type", "type", head, "values", join(removed)));
+        if (!missing.isEmpty()) {
+            messages.add(Lang.get("filter.removed-missing", "values", join(missing)));
+        }
+        return messages;
+    }
+
+    /** 该玩家是否已在名单里（按小写名字比对）。 */
+    private static boolean playerListed(FilterData data, String name) {
+        String lower = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        return !lower.isEmpty() && data.playerNames.contains(lower);
+    }
+
+    /** 在线玩家解析；无服务端环境下不抛异常（脱离服务端的离线验证会走到这里）。 */
+    private static Player onlinePlayer(String name) {
+        try {
+            return Bukkit.getPlayerExact(name);
+        } catch (Throwable throwable) {
+            return null;
+        }
+    }
+
     /** 当前筛选的文字描述（{@code /msl filter list}，只读）。 */
     public static List<String> describe(UUID playerId) {
         FilterData data = dataOf(playerId);
@@ -576,7 +698,32 @@ public final class TargetFilter {
         }
         data.playerIds.add(online.getUniqueId());
         data.playerNames.add(online.getName().toLowerCase(Locale.ROOT));
+        data.playerIndex.put(online.getName().toLowerCase(Locale.ROOT), online.getUniqueId());
         return true;
+    }
+
+    /**
+     * 从白名单里摘掉一个玩家：**名字与 UUID 一起删**。
+     *
+     * <p>只删名字是不够的：{@link FilterData#allows} 是"命中任一即允许"，
+     * 留着 UUID 会让离线玩家下次上线时仍被放行。名字 → UUID 的对应关系走
+     * {@link FilterData#playerIndex}（读盘时由 {@link FilterData#reindexPlayers()} 重建），
+     * 索引缺失时退化为按**在线**玩家再解析一次。
+     */
+    private static void removePlayer(FilterData data, String name) {
+        String lower = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        if (lower.isEmpty()) {
+            return;
+        }
+        data.playerNames.remove(lower);
+        UUID id = data.playerIndex.remove(lower);
+        if (id == null) {
+            Player online = onlinePlayer(name.trim());
+            id = online == null ? null : online.getUniqueId();
+        }
+        if (id != null) {
+            data.playerIds.remove(id);
+        }
     }
 
     private static String join(Collection<String> values) {
@@ -603,6 +750,32 @@ public final class TargetFilter {
         final Set<UUID> playerIds = new LinkedHashSet<>();
         /** 玩家白名单（名字兜底，小写）。 */
         final Set<String> playerNames = new LinkedHashSet<>();
+        /**
+         * 名字（小写）→ UUID 的索引，**只服务于 `remove`**：删除时必须把 UUID 与名字一起摘掉，
+         * 否则离线玩家下次上线仍会被 {@link #allows} 放行。
+         *
+         * <p>不是持久化字段：{@link FilterStorage.Row} 仍只存两份平行集合，
+         * 读盘后由 {@link #reindexPlayers()} 按插入顺序重新配对（写入时两份集合的顺序是一一对应的）。
+         */
+        final Map<String, UUID> playerIndex = new LinkedHashMap<>();
+
+        /**
+         * 按插入顺序把 {@link #playerIds} 与 {@link #playerNames} 重新配对成索引。
+         *
+         * <p>两份集合的大小不一致（老存档里只有 UUID、或只有名字）时**放弃建索引**，
+         * 此时 `remove` 退化为"删除名字 + 按在线玩家解析 UUID"，不会误删别人。
+         */
+        void reindexPlayers() {
+            this.playerIndex.clear();
+            if (this.playerIds.size() != this.playerNames.size()) {
+                return;
+            }
+            java.util.Iterator<UUID> ids = this.playerIds.iterator();
+            java.util.Iterator<String> names = this.playerNames.iterator();
+            while (ids.hasNext() && names.hasNext()) {
+                this.playerIndex.put(names.next(), ids.next());
+            }
+        }
 
         /** 白名单判定。 */
         private boolean allows(LivingEntity target) {            if (target instanceof Player player) {
@@ -647,6 +820,7 @@ public final class TargetFilter {
             this.playerTypeIncluded = false;
             this.playerIds.clear();
             this.playerNames.clear();
+            this.playerIndex.clear();
         }
     }
 }

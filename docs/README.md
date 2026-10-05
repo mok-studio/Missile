@@ -24,11 +24,10 @@
 ## 2. 构建
 
 ```bash
-cd E:\ser_plugins\Missile
 mvn -s .mvn/local-repo-settings.xml -B clean package
 ```
 
-产物：`target/Missile-1.0.2.jar`
+产物：`target/Missile-1.0.3.jar`
 
 > **为什么带 `-s .mvn/local-repo-settings.xml`？**
 > 本工作区默认的 Maven 本地仓库（`%USERPROFILE%\.m2\repository`）不可写，直接 `mvn package` 会以 `AccessDeniedException ... resolver-status.properties` 失败。仓库内附带的这份 settings 把本地仓库指向工作区内的 `.m2repo/`。若你的环境 `%USERPROFILE%\.m2` 可写，可直接用 `mvn -B package`。
@@ -37,7 +36,7 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 
 ## 3. 安装
 
-1. 把 `target/Missile-1.0.2.jar` 复制到服务端 `plugins/` 目录。
+1. 把 `target/Missile-1.0.3.jar` 复制到服务端 `plugins/` 目录。
 2. 启动或重启服务端。
 3. 控制台出现 `Missile 已启用：手持 TNT 右键开启导引头，再右键发射` 即为加载成功。
 4. 首次启动会在 `plugins/Missile/` 生成**两份**配置：`config.yml` 与 `msl_config.yml`（语言文件释放到 `plugins/Missile/lang/`）。
@@ -56,8 +55,10 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 锁定期间动作栏实时显示（模板见 `lang/*.yml` 的 `seeker.status`，可覆盖）：
 
 ```
-§7红外导弹 §7| §f目标: 玩家 §7| §a锁定 §fSteve §7| §f按右键发射
+§f§k1 §7红外导弹 §7| §f目标: 任意 §7| §a锁定 §fSteve §7| §f按右键发射 §f§k1
 ```
+
+> 锁定时会在**左右两侧**各加一段 `launcher.lock-padding`（默认 `&f&k1`）。**包裹段与主文本之间的那一个空格由插件补**，所以两侧都是"乱码 + 一个空格 + 正文" / "正文 + 一个空格 + 乱码"（1.0.3 修正：以前左侧没有空格）。
 
 要点：
 
@@ -68,6 +69,7 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 - 型号只能通过命令选择；右键不做型号循环，也不判定副手物品。
 - **个人开关**：`/msl on|off` 只对你自己生效（默认开启，仅存内存）。关闭后你手持 TNT 右键**完全走原版逻辑**，已开启的导引头会被清空；其他玩家不受影响。**注意：关掉后你也收不到 RWR / MAWS 告警**（见第 12 节）。
 - **目标筛选**：`/msl filter ...` 限定导引头只锁白名单内的目标，详见第 11 节。
+- **一键回默认**：`/msl default` 把**你自己**的全部导弹设置恢复出厂值（**只保留型号与 `/msl on|off`**），详见第 6 节。
 
 ## 5. 五种导弹
 
@@ -83,9 +85,9 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 | 制导方式 | 自主，纯追踪 | 发射者准星持续照射 | 自主，比例导引（打提前量） | 驾束：跟随发射者视线 | 同主动雷达 |
 | 发射后需持续瞄准 | 否 | **是** | 否 | **是**（持续给视线） | 否 |
 | 自主（重）截获 | 55 格 / 30° | 128 格 / 10°（照射） | 70 格 / 40° | 无（不锁目标） | **100 格 / 45°** |
-| 干扰物 | 烈焰棒 | 铁粒 | 铁粒 | 无 | **无（免疫）** |
+| 干扰物 | **烈焰粉**（`BLAZE_POWDER`，**丢出**才有效） | 铁粒 | 铁粒 | 无 | **无（免疫）** |
 | 脱锁概率 / 判定周期 | 15% / 1 秒 | 5% / 1 秒 | 2.5% / 1 秒 | 无 | **0（免疫）** |
-| 脱锁后果 | 改锁并追踪干扰者 | 照射链路**永久**中断 | 记 3 秒惯性后自主重截获 | 无 | 不会脱锁 |
+| 脱锁后果 | 脱锁并**改锁那件掉落的烈焰粉**，5 秒内不会重新锁回投掷者 | 照射链路**永久**中断 | 记 3 秒惯性后自主重截获 | 无 | 不会脱锁 |
 | 触发敌方 RWR | 否 | 是 | 是 | 否 | **是** |
 | 战斗部威力 | 3.0 | 3.5 | 4.5 | 3.5 | **10.0** |
 | 尾焰 / 尾烟粒子 | `FLAME` / `LARGE_SMOKE` | `SMALL_FLAME` / `CAMPFIRE_COSY_SMOKE` | `COPPER_FIRE_FLAME` / `WHITE_SMOKE` | `SOUL_FIRE_FLAME` / `SMOKE` | `COPPER_FIRE_FLAME` / `WHITE_SMOKE` |
@@ -102,13 +104,18 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
   - **免疫一切干扰**：`decoyChance = 0`，`Missile#checkDecoy()` 直接返回。
   - 会触发敌方 RWR（跟踪 + 导弹两级）与 MAWS。
   - 注意：**开导引头那一下的初始锁定**仍走全型号共用的 128 格 / 10° 锥（`launcher.lock-range/lock-cone`）；100 格 / 45° 只用于**弹上自主重截获**。
-  - 物理注意：**850 m/s = 42.5 格/tick**，3 格近炸引信可能被"跳过"，实际引爆主要靠弹体扫掠命中。`msl_config.yml` 的 `super-active` 段里已就此写了提示（可调低 `max-speed` 或把 `model.teleport-duration-ticks` 设为 0）。
+  - 物理注意：**850 m/s = 42.5 格/tick**，3 格近炸引信可能被"跳过"，实际引爆主要靠弹体扫掠命中。`msl_config.yml` 的 `super-active` 段里已就此写了提示（可调低 `max-speed`）。
 
 ### 干扰（对抗）机制
 
-- 判定对象：**主手或副手**持有对应干扰物的玩家，位于导弹 `flight.decoy-search-range`（默认 48）格内、且在导引头**前方**（方向点积 > 0）；排除发射者本人与旁观模式玩家。
-- 判定频率：`flight.decoy-interval-ticks`（默认 20 tick = 1 秒）一次，每次独立按概率判定（按 tick 判定会让 15% 被放大成近乎必中）。
-- 红外被干扰后**改锁干扰者**；主动脱锁后飞向惯性记忆点，`flight.reacquire-delay-ticks`（默认 60 tick）后自主重截获。
+- 判定对象：**玩家丢出**的干扰物**掉落物实体**（红外 = 烈焰粉 `BLAZE_POWDER`，雷达弹 = 铁粒 `IRON_NUGGET`），
+  位于导弹 `decoy.search-range`（默认 48，旧键 `flight.decoy-search-range`）格内、且在导引头**前方**（方向点积 > 0）；
+  排除发射者本人丢的与旁观模式玩家丢的。**拿在手上不再算干扰源**（`decoy.require-thrown` 默认 `true`，写 `false` 可回退旧行为）。
+- 打标方式：`PlayerDropItemEvent` 记"掉落物 UUID → 丢出时的 tick"，`decoy.ttl-ticks`（默认 60 = 3 秒）内有效；
+  发射器 / 漏斗 / 自然生成的物品 `getThrower()` 为 `null`，一律无效；**插件重载前就已经在地上的物品没有标记 → 不生效**。
+- 判定频率：`decoy.interval-ticks`（默认 20 tick = 1 秒）一次，每次独立按概率判定（按 tick 判定会让 15% 被放大成近乎必中）。
+- 红外被干扰后**改锁那件掉落的烈焰粉**，并在 `decoy.lockout-ticks`（默认 100 = 5 秒）内不会重新锁回投掷者；
+  主动脱锁后飞向惯性记忆点，`flight.reacquire-delay-ticks`（默认 60 tick）后自主重截获。
 - semiLOS 与 super_active **不参与**干扰判定。
 - 每次触发都会通过动作栏通知发射者（文案 `missile.decoy-*`）。
 
@@ -119,11 +126,25 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 | `/msl`、`/msl status` | `missile.use` | 查看状态：型号 + 参数、锁定目标类型、导引头、个人开关、全服开关、IR 模式、SA 模式 + **safilter 内容**、筛选模式 |
 | `/msl ir [default\|player\|entity] [usefilter\|filteroff]` | `missile.use` | 红外 + 工作模式 + 白名单通道（见下） |
 | `/msl semi`、`/msl active`、`/msl semiLOS` | `missile.use` | 仅切换型号（不支持额外参数，多余参数按容错规则忽略） |
-| `/msl super_active [default\|entity [ID]\|player [名字]\|filter <list\|clear>]` | `missile.admin` | 超级主动弹 + **safilter**（独立名单，见第 11.5 节） |
-| `/msl filter <entity\|player\|clear\|on\|off\|list> [set\|add\|clear] [ID...]` | `missile.use` | 目标筛选（第 11 节） |
+| `/msl super_active [default\|entity [set\|add\|remove\|clear] [ID...]\|player [set\|add\|remove\|clear] [名字...]\|filter <list\|clear>]` | `missile.admin` | 超级主动弹 + **safilter**（独立名单，见第 11.5 节） |
+| `/msl filter <entity\|player\|clear\|on\|off\|list> [set\|add\|remove\|clear] [ID...]` | `missile.use` | 目标筛选（第 11 节） |
 | `/msl on` / `/msl off` | `missile.use` | 个人导弹开关（默认开，仅存内存） |
+| `/msl default` | `missile.use` | **把你自己的全部导弹设置恢复默认**——只保留**型号**与 `/msl on\|off`（见下） |
 | `/msl global <on\|off>` | `missile.admin` | 全服开关；**会把新值写回 `msl_config.yml`**（只替换那一行、保留注释），所以重启后仍然记得 |
 | `/msl reload` | `missile.admin` | 重读 `config.yml` + `msl_config.yml` + 语言文件，并把筛选数据落盘 |
+
+### `/msl default`（1.0.3 新增）
+
+把**执行者自己**的导弹设置一键恢复出厂值，权限只需要 `missile.use`（每个玩家都能重置自己的）。
+
+| 会被重置 | 不会被重置 |
+|---|---|
+| IR 工作模式 → `default`、`usefilter` → 关 | **玩家选的型号**（`/msl ir` … 仍是你之前选的那个） |
+| SA 模式 → `default`、**safilter 清空** | **`/msl on\|off` 个人开关** |
+| 导引头关闭、当前锁定清空 | 全服开关（那是管理员的事） |
+| **目标筛选白名单 + 筛选模式**（`/msl filter` 的全部数据，含落盘记录） | 其它玩家的任何数据 |
+
+> 为什么把筛选数据也算进来：它就是"每玩家一份的导弹设置"，留着它就不算"恢复默认"。想只清筛选请用 `/msl filter clear`。
 
 别名 `/msl` ≡ `/missile`。**`plugin.yml` 故意不给命令声明 `permission`**（否则只带 `missile.admin` 的管理员会被 `missile.use` 挡住）；权限由代码按子命令校验。
 
@@ -132,8 +153,11 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 从左往右解析，**遇第一个非法参数即停止，只执行非法参数之前的部分**（被忽略的部分静默处理）：
 
 - `/msl super_active entity <乱写>` → 模式生效、ID 被拒绝（前缀容错）；`/msl super_active player 114514` ≡ `/msl super_active player`
+- `/msl super_active entity add zombie <乱写ID>` → 模式切到 `entity`、**僵尸已写入**，后面的非法 ID 及其后全部忽略
 - `/msl ir 114514` ≡ `/msl ir`（不改变任何设置）
 - `/msl ir entity usefilter filteroff` → 只执行到 `usefilter`（第 4 个参数被忽略）
+
+> **`remove` 的例外**：`/msl filter … remove` 与 `/msl super_active … remove` 遇到"**合法的输入但名单里没有**"只会在回执里列出来，**不会中断**（否则一次删多个时很难用）；遇到**非法**输入（未知实体 ID / 找不到的玩家）仍然按上面的规则中断。
 
 ### `/msl ir` 的模式与白名单通道（**相互独立**）
 
@@ -157,7 +181,14 @@ mvn -s .mvn/local-repo-settings.xml -B clean package
 
 ### Tab 补全
 
-按位置给出全集并按权限过滤：位置 1 = 型号 / `on` / `off` / `filter` / `status`（管理员另有 `super_active` / `global` / `reload`）；位置 2 = 按类型给模式、或 `set|add|clear|list`、或 `on|off`；位置 3 = `set|add|clear` / `usefilter|filteroff`；位置 4 = 在线玩家名或全部实体 ID。
+按位置给出全集并按权限过滤：
+
+| 位置 | 内容 |
+|---|---|
+| 1 | 型号 / `on` / `off` / `filter` / `status` / **`default`**（管理员另有 `super_active` / `global` / `reload`） |
+| 2 | 按类型给模式、或 `set\|add\|remove\|clear\|list`、或 `on\|off` |
+| 3 | `set\|add\|remove\|clear`（filter 的 `entity`/`player` 之后）；`usefilter\|filteroff`（`/msl ir <模式>` 之后）；**`super_active` 的 `entity`/`player` 之后给 4 个动词 + 全部实体 ID / 在线玩家名** |
+| 4 | `set`/`add` 给全集（全部实体 ID / 在线玩家名）；**`remove` 给"名单里已有的条目"**（1.0.3：让"能删什么"看得见） |
 
 ## 7. 配置
 
@@ -188,8 +219,9 @@ filter:
 | 板块 | 键数 | 内容 |
 |---|---|---|
 | `missile` | 2 | `global-enabled`（全服开关值，`/msl global` 会原地改写它）、`persist-global-switch`（是否写回，默认 `true`） |
-| `launcher` | 6 | `lock-range`、`lock-cone`、`refresh-interval-ticks`、`lock-padding`（锁定时 ActionBar 两端包裹段，默认 `" &f&k1"`）、`muzzle-offset`、`max-active` |
+| `launcher` | 6 | `lock-range`、`lock-cone`、`refresh-interval-ticks`、`lock-padding`（锁定时 ActionBar 两端包裹段，默认 `"&f&k1"`；**与主文本之间的空格由插件补**，值首尾空白会被忽略）、`muzzle-offset`、`max-active` |
 | `flight` | 4 | `max-life-ticks`、`proximity-fuse`、`inertial-memory-ticks`、`reacquire-delay-ticks` |
+| `decoy` | 5 | `interval-ticks`、`search-range`、`require-thrown`、`ttl-ticks`、`lockout-ticks`（旧键 `flight.decoy-interval-ticks` / `flight.decoy-search-range` 仍兼容） |
 | `beam` | 2 | `length`、`min-length`（驾束） |
 | `particles` | 15 | `viewer-range` + 尾焰 / 内焰 / 尾烟 / 云 各 3 项（数量、扩散、附加速度）+ `back-offset`、`smoke-back-multiplier` |
 | `explosion` | 1 | `break-blocks`（`false` = 只伤害实体不破坏地形） |
@@ -249,7 +281,7 @@ filter:
 | 想把船 / 矿车打掉却锁不上 | 载具默认不在基线里：`/msl filter entity set oak_boat`（或组别名 `boat`）显式列出后就能锁 |
 | 加了 `phantom` 却连幻翼都锁不上 | 已在 2026-10-05 修复：筛选模式打开时白名单启用的类别优先。若还不行，看 `/msl filter list` 里"启用类型"是否为 `entity`、且模式是 `仅锁定筛选白名单内目标` |
 | `/msl filter on` 提示"白名单是空的" | 这是故意的：空白名单 + 筛选模式 = 什么都锁不上。先 `/msl filter entity <ID>` 或 `/msl filter player <名字>` |
-| 导弹中途脱锁 | 附近有人手持烈焰棒 / 铁粒，属预期抗干扰；换抗干扰更强的型号，或让导弹免疫干扰 |
+| 导弹中途脱锁 | 附近有人丢出了烈焰粉 / 铁粒，属预期抗干扰；换抗干扰更强的型号，或让导弹免疫干扰 |
 | 导弹直飞不追踪 | 用的是 `semiLOS`（本来就是手动驾束）；或目标已死 / 前方锥内无目标 |
 | 导弹没直接命中也炸了 | 红外 / 半主动 / 主动 / 超主动都有近炸引信（`flight.proximity-fuse`）；semiLOS 例外 |
 | 地形被炸 | `msl_config.yml` 的 `explosion.break-blocks` 改为 `false` |
@@ -276,8 +308,8 @@ filter:
 
 | 命令 | 说明 |
 |---|---|
-| `/msl filter entity [set\|add\|clear] [<实体ID...>]` | 实体类白名单（`zombie` 与 `minecraft:zombie` 均可） |
-| `/msl filter player [set\|add\|clear] [<玩家名...>]` | 玩家类白名单（只接受**当前在线**名字，同时记 UUID + 名字） |
+| `/msl filter entity [set\|add\|remove\|clear] [<实体ID...>]` | 实体类白名单（`zombie` 与 `minecraft:zombie` 均可） |
+| `/msl filter player [set\|add\|remove\|clear] [<玩家名...>]` | 玩家类白名单（`set`/`add` 只接受**当前在线**名字，同时记 UUID + 名字；`remove` 离线也能删） |
 | `/msl filter clear` | 清空全部筛选数据（**不动** `on`/`off`） |
 | `/msl filter on` / `off` | 启用 / 停用筛选模式 |
 | `/msl filter list` | 只读查看模式与明细 |
@@ -285,12 +317,25 @@ filter:
 规则：
 
 - `set` = **先清空全部**筛选数据再写入本次类型与 ID；`add` 与"直接跟 ID"都是追加。
-- `set` / `add` 缺后续必选 ID → 该 `set` / `add` **整体无效**（不清空、不写入）。
+- `remove`（1.0.3 新增）= 从**该类名单**里摘掉列出的条目；`clear` 清空该类。
+- `set` / `add` / `remove` 缺后续必选 ID → 该操作**整体无效**（不清空、不写入）。
 - 成功写入类型或 ID 会**自动把模式置为 `on`**（否则命令看起来"没生效"）。
+- **`remove` 刻意没有副作用**：不会打开某一类（`entity remove zombie` 不会让"任意生物"生效）、不会把筛选模式打开；
+  某类名单被删空后该类仍是"已启用 + 空名单"，也就是回到 `filter entity` / `filter player` 的"不限制"语义。
 - **`on` 而白名单全空 = 什么都锁不上**，所以这条状态被从三个方向堵住了：① 空白名单时 `/msl filter on` **拒绝开启**并说明原因；② `clear` / `entity clear` / `player clear` 把数据清空时会**自动把模式关回 `off`** 并提示；③ 读盘时若发现老存档是"`on` + 空名单"也会纠正为自由锁定。**不变量：`enabled = true` ⟹ 白名单非空。**
 - `minecraft:player` 不能作为实体 ID（有专门报错）。
 - 已发射导弹的**弹上重截获**同样遵守发射者的筛选（`TargetSelector#selectEntity` 与 `#acquireEntityInCone` 两个入口都判定）。
 - 与 `/msl ir ... usefilter` 的关系：`usefilter` 打开时**无视 `on`/`off` 开关**，直接把白名单当作候选集合（空 = 谁都锁不上）。
+
+举例（1.0.3 的 `remove`）：
+
+```
+/msl filter entity add zombie skeleton   # 追加两项
+/msl filter entity remove skeleton       # 只摘掉骷髅（僵尸保留）
+/msl filter player remove Steve          # Steve 离线也能摘（UUID + 名字一起删）
+```
+
+> Tab 补全在 `remove` 后面**列出该类名单里已有的条目**（`set`/`add` 仍给全集），所以不用背 ID 也能删。
 
 ### 非生物实体：指定 ID 才能锁（需求 3.9）
 
@@ -322,10 +367,26 @@ filter:
 /msl super_active filter clear        # 清空 safilter 并自动退回 default
 ```
 
-- **不带 ID/名字 = 不限制**（除玩家外的任意实体 / 除自己外的任意玩家），所以"想换成另一个 ID"要先 `filter clear` 或直接再来一次 `entity <新ID>`（会**追加**）。
+**1.0.3 新增的条目增删动词**（写在 `entity` / `player` 之后，只作用于**该类**）：
+
+```
+/msl super_active entity set zombie skeleton   # 实体类 = 这两项（覆盖该类）
+/msl super_active entity add boat              # 实体类追加所有船
+/msl super_active entity remove zombie         # 实体类摘掉僵尸
+/msl super_active entity clear                 # 实体类清空
+/msl super_active player add Steve             # 玩家类追加 Steve（在线）
+/msl super_active player remove Steve          # 玩家类摘掉 Steve（离线也能删）
+/msl super_active player clear                 # 玩家类清空
+```
+
+- 裸 ID/名字（不写动词）仍等价于 `add`，**1.0.2 的写法完全兼容**：`/msl super_active entity zombie` ≡ `… entity add zombie`。
+- 四个动词都会把 SA 模式切到对应的 `entity` / `player`（"最后动过哪一类"）；`clear` 只清那一类，另一类保留。
+- `set` / `add` / `remove` 至少跟一个条目，否则只回用法、不改名单；找不到的实体 ID / 玩家按前缀容错中断。
+- **不带 ID/名字 = 不限制**（除玩家外的任意实体 / 除自己外的任意玩家），并**清空整个 safilter**；所以"想换成另一批"可以 `default` 后重来，或用上面的 `set`。
 - **`minecraft:player` 不能当实体 ID**（玩家请用 `player` 参数）。
 - **非生物**（船 / 末地水晶 / 盔甲架…）即使在 `default`（任意）下也要**在 safilter 里显式列出**才能锁。
-- SA 的三种模式**不看全局 filter**；`/msl status` 里能看到当前模式与 safilter 内容。
+- SA 的三种模式**不看全局 filter**；`/msl status` 与 `/msl super_active filter list` 里能看到当前模式与 safilter 内容。
+- **Tab 补全**：`entity`/`player` 之后先给 4 个动词，再给全部实体 ID / 在线玩家名；`remove` 之后给**名单里已有的条目**。
 
 ### 11.6 实体 ID 用**完整注册 ID**
 
@@ -363,7 +424,7 @@ filter:
 ## 13. 多语言与语言文件
 
 - 位置：`plugins/Missile/lang/<language>.yml`，由 `config.yml` 的 `language` 指定（默认 `zh_cn`）。
-- 内置 `zh_cn` 与 `en_us`（**key 数 113 : 113，逐条对齐**）；首次启动释放到数据目录，可直接改，也可复制一份做新语言（`lang/ja_jp.yml` + `language: ja_jp`）。
+- 内置 `zh_cn` 与 `en_us`（**key 数 121 : 121，逐条对齐**，1.0.3 实测）；首次启动释放到数据目录，可直接改，也可复制一份做新语言（`lang/ja_jp.yml` + `language: ja_jp`）。
 - 文案优先级：`config.yml` 的 `messages:` 覆盖 → `lang/<语言>.yml` → 返回 key 本身（并在控制台告警一次，便于发现漏翻）。
 - 颜色：`&` 代码（`&6` `&c` `&l` …）+ 十六进制 `&#RRGGBB`（也支持原版 `&x&R&R&G&G&B&B` 写法）。
 - `{name}` 是 Lang 的占位符；`%msl_xxx%` 是 PlaceholderAPI 占位符（见第 14 节），两者互不干扰。
@@ -380,7 +441,7 @@ filter:
 | `%msl_entity_name%` | 导引头锁定的目标名（玩家显示玩家 ID）；**无锁定时显示"搜索中"** |
 | `%msl_locked%` | 当前是否有锁定（`true` / `false`） |
 | `%msl_lock%` | 整句锁定状态（"锁定 X" / "搜索中"） |
-| `%msl_target_kind%` | 「目标」字段：`混合` / `任意` / `实体` / `玩家`（按**实际生效类别**；SA 看 safilter） |
+| `%msl_target_kind%` | 「目标」字段：`混合` / `任意` / `实体` / `玩家`。普通型号看**实际生效类别**（筛选白名单；名单里没有具体目标 = **任意**）；超级主动弹看 **safilter 名单内容**（两类条目同时存在 = **混合**） |
 | `%msl_maws%` | MAWS 最近威胁的方位箭头；无威胁时空串 |
 | `%msl_armed%` | 导引头是否已开启 |
 | `%msl_on%` | 该玩家个人导弹开关 |
@@ -416,39 +477,56 @@ filter:
 - **已确认移除的 API**：`org.bukkit.util.EntityHitResult`（改用 `RayTraceResult#getHitEntity()`）、`Entity#setCollidable`（本项目未使用）；`Sound` 在 1.21.11 **已由枚举改为 interface**（`Sound.valueOf` 不可用，常量仍在）。
 - **尚未在真实服务端运行验证**：加载 / 注册 / 完整发射链路 / BossBar 实际显示 / 告警音 / PAPI 注册与 TAB 替换都未做运行时烟测。
 
+### 15.1 1.0.3 的验证补充
+
+> ⚠ 上表那 13 个程序是**上一轮工作**在另一个工作区（`E:\ser_plugins\Missile\dist\`）里产出并运行的，
+> **本仓库（GitHub 克隆）里没有 `dist/` 的这些源码文件**，所以数字无法在本工作区复跑；
+> 本工作区**没有 Maven**（`.m2repo` 也不存在），构建与验证改用 JDK 21 的 `javac` + 本地 `~/.m2/repository` 缓存。
+
+1.0.3 的改动由**新增的 `dist/upgradecheck/com/missile/Upgrade103Check.java`** 覆盖，**45 项断言全绿**：
+
+| 覆盖点 | 断言内容 |
+|---|---|
+| 锁定包裹（需求 7） | 默认 `&f&k1` → `§f§k1 ` + 正文 + ` §f§k1`（左右各**一个**空格）；1.0.2 的 `" &f&k1"` 写法结果**完全一致**；首尾空白被忽略；空串 = 不包裹 |
+| `/msl default`（需求 1） | 型号**保留**、`on/off` 不在重置范围；IR 模式 / usefilter / SA 模式 / safilter / 导引头 / 锁定全部回默认；筛选数据整份清掉（类别回 `NONE`） |
+| safilter 增删（需求 3） | 实体/玩家两类的 set / add / remove / clear；**按名字删除会同时摘掉 UUID**（离线也算）；只清一类不影响另一类 |
+| `filter … remove`（需求 2） | 命中 → `filter.removed-type`；未命中 → `filter.removed-none`；缺条目 → `filter.error-need-value`；未知 ID → `filter.unknown-id` 且**不影响已有条目**；`remove` **不会打开另一类** |
+| 名字↔UUID 索引 | 读盘后按插入顺序重新配对；两份集合长度不一致时**放弃建索引**（宁可不删也不误删） |
+| safilter「目标」文案（需求 5） | 两类条目同时存在 → **混合**；只有实体 → 实体；只有玩家 → 玩家；名单为空才回落到模式 |
+
+同一次运行还复核了**语言包对齐**：`zh_cn` : `en_us` = **121 : 121**，零差异；源码里所有 `Lang.get/msg` 的字面 key 全部命中
+（唯二"未命中"是动态拼接的 `decoy.` 与 `rwr.dir-`，属已知误报）。
+
+> **仍未做**：真实服务端联调（1.0.2 起就一直缺），`remove`/`set`/`add` 的实际手感与 Tab 补全的展示效果都只有离线断言。
+
 ## 16. 目录结构
 
 ```
-E:\ser_plugins\Missile
+<工作区>                                # 本仓库 = GitHub 上的 mok-studio/Missile 克隆
 ├── pom.xml                            # paper-api + placeholderapi(provided)
 ├── .mvn/local-repo-settings.xml       # 构建用：把 Maven 本地仓库指向工作区内
 ├── docs/
 │   ├── README.md                      # 本文档（服主 / 开发者）
 │   ├── 玩家手册.md                     # 面向玩家
-│   ├── 服务端联调清单.md                # P2 第 9 项：真实服务端要验什么（可勾选）
-│   └── 总需求文档.md                   # 需求 + 实现状态 + 决策记录（会话交接用）
+│   ├── 总需求文档.md                   # 需求 + 实现状态 + 决策记录（会话交接用）
+│   └── （服务端联调清单.md）             # 上一轮工作区有，本克隆未包含
 ├── dist/                              # 一次性验证程序与发布包（已 gitignore，不进 jar）
-│   ├── TypeConfigCheck.java  GameplayCheck.java  PlaceholderCheck.java
-│   ├── ModeCheck.java  RwrCheck.java  ArgsCheck.java  LangCheck.java
-│   ├── PersistCheck.java  FilterCheck.java  VehicleCheck.java  MawsCheck.java  SaCheck.java  DecoyCheck.java
-│   ├── cp.txt                         # 上述程序要用的 classpath（含 placeholderapi jar）
-│   ├── ColorCheck.java  ColorCheck2.java  RotationCheck.java   # 早期验证程序（颜色转换 / 模型四元数）
-│   ├── storagecheck/                  # 早期验证程序（筛选数据 JSON 往返）
-│   └── Missile-1.0.2-src.zip          # 源码发布包（.gitignore + pom.xml + .mvn + docs + scripts + src）
+│   ├── upgradecheck/com/missile/Upgrade103Check.java   # 1.0.3：45 项断言
+│   └── （1.0.2 的 13 个 *Check.java 在上一轮工作区，本克隆未包含）
 ├── scripts/
 │   ├── publish-to-github.ps1          # 一键推送（鉴权预检 + 非空远端中止）
-│   └── check-line-endings.ps1         # 行尾自查：全仓文本文件必须是纯 LF（-Fix 就地还原）
-├── 开发历史/                          # 历史构建产物（*.jar 已 gitignore）
+│   └── check-line-endings.ps1         # 行尾自查（-Fix 就地还原）
 ├── src/main/java/com/missile/
 │   ├── MissilePlugin.java             # 主类：注册监听器/命令/占位符扩展、加载配置与语言、每 tick 任务
-│   ├── MissileCommand.java            # /msl 命令实现（型号 / on|off / filter / status / global / reload）
+│   ├── MissileCommand.java            # /msl 命令实现（型号 / on|off / default / filter / status / global / reload）
 │   ├── MissileType.java               # 五种型号的出厂默认参数 + radarHoming() + TargetKind（玩家/生物/不限）
 │   ├── Missile.java                   # 单发导弹：制导钩子、干扰（丢出的诱饵）、粒子、引爆
 │   ├── SemiLOSMissile.java            # 半自动指令瞄准线：驾束制导子类
 │   ├── MissileManager.java            # 在飞导弹注册表与发射分流
-│   ├── SeekerListener.java            # 右键开导引头/锁定/发射、命中处理、导引头状态
+│   ├── SeekerListener.java            # 右键开导引头/锁定/发射、命中处理、导引头状态与 safilter 状态
+│   ├── SaProfile.java                 # 超级主动弹的锁定配置快照（模式 + safilter，不可变）
 │   ├── TargetSelector.java            # 视线锁定与准星锥角最近者选择 + 白名单通道
-│   ├── TargetFilter.java              # 目标筛选：白名单数据 / 命令解析 / canTarget / isWhitelisted
+│   ├── TargetFilter.java              # 目标筛选：白名单数据 / 命令解析（含 remove）/ canTarget / isWhitelisted
 │   ├── FilterStorage.java             # 筛选数据持久化（JSON 默认 / MySQL 可选，异步 + 脏检查）
 │   ├── Settings.java                  # config.yml + msl_config.yml 的唯一读取入口（可热重载）
 │   ├── Lang.java                      # 多语言文案表（lang/<语言>.yml + messages 覆盖）
@@ -459,9 +537,9 @@ E:\ser_plugins\Missile
 ├── src/main/resources/
 │   ├── plugin.yml                     # 命令、权限、softdepend: [PlaceholderAPI]
 │   ├── config.yml                     # 通用项：语言 / 文案覆盖 / 筛选存储
-│   ├── msl_config.yml                 # 导弹参数：全服开关 / 导引头 / 飞行 / 驾束 / 粒子 / 模型 / 战斗部 / 型号 / RWR / MAWS
+│   ├── msl_config.yml                 # 导弹参数：全服开关 / 导引头 / 飞行 / 诱饵 / 驾束 / 粒子 / 战斗部 / 型号 / RWR / MAWS
 │   └── lang/
 │       ├── zh_cn.yml                  # 简中文案（默认）
 │       └── en_us.yml                  # 英文文案
-└── target/Missile-1.0.2.jar           # 构建产物
+└── target/Missile-1.0.3.jar           # 构建产物
 ```

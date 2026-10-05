@@ -1,6 +1,7 @@
 package com.missile;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -308,6 +309,14 @@ public final class SeekerListener implements Listener {
         private final Set<String> saEntityIds = new LinkedHashSet<>();
         private final Set<UUID> saPlayerIds = new LinkedHashSet<>();
         private final Set<String> saPlayerNames = new LinkedHashSet<>();
+        /**
+         * safilter 玩家类的"名字 → UUID"索引（小写名字）。
+         *
+         * <p>存在理由：`remove` 需要**同时**摘掉 UUID 与名字。只删名字的话，
+         * 离线玩家重新上线时会因为 UUID 还在名单里而被放行（{@code SaProfile#allowsPlayer}
+         * 是"命中任一即允许"）。safilter 是会话级数据，不存在老存档问题，所以直接在内存里维护即可。
+         */
+        private final Map<String, UUID> saPlayerIndex = new LinkedHashMap<>();
 
         private boolean armed;
         private UUID targetId;
@@ -440,14 +449,75 @@ public final class SeekerListener implements Listener {
         /** 清空 safilter（保留当前模式）。 */
         public void clearSaFilter() {
             this.saEntityIds.clear();
+            clearSaPlayers();
+        }
+
+        /** 只清空 safilter 的实体类条目（`/msl super_active entity clear`）。 */
+        public void clearSaEntityIds() {
+            this.saEntityIds.clear();
+        }
+
+        /** 只清空 safilter 的玩家类条目（`/msl super_active player clear`）。 */
+        public void clearSaPlayers() {
             this.saPlayerIds.clear();
             this.saPlayerNames.clear();
+            this.saPlayerIndex.clear();
+        }
+
+        /** 从 safilter 的实体类移除一个 ID；返回它原先是否在名单里。 */
+        public boolean removeSaEntityId(String id) {
+            return id != null && !id.isEmpty() && this.saEntityIds.remove(id);
+        }
+
+        /**
+         * 从 safilter 的玩家类移除一个玩家；UUID 与名字一起摘。
+         *
+         * <p>名字走"名字 → UUID"索引（{@link #saPlayerIndex}），所以**离线玩家也能被移除**；
+         * 索引里找不到时（例如手工塞进来的条目）退化为按在线玩家解析一次。
+         *
+         * @return 是否真的移除了什么
+         */
+        public boolean removeSaPlayer(String playerName, UUID playerId) {
+            boolean removed = false;
+            if (playerName != null && !playerName.isBlank()) {
+                String lower = playerName.toLowerCase(Locale.ROOT);
+                removed |= this.saPlayerNames.remove(lower);
+                UUID indexed = this.saPlayerIndex.remove(lower);
+                if (indexed != null) {
+                    removed |= this.saPlayerIds.remove(indexed);
+                }
+            }
+            if (playerId != null) {
+                removed |= this.saPlayerIds.remove(playerId);
+                // UUID 与名字是同一个玩家的两半：按 UUID 删除时，索引里对应的名字也要一起摘掉
+                this.saPlayerIndex.entrySet().removeIf(entry -> {
+                    if (!playerId.equals(entry.getValue())) {
+                        return false;
+                    }
+                    this.saPlayerNames.remove(entry.getKey());
+                    return true;
+                });
+            }
+            return removed;
         }
 
         /** {@code /msl super_active default}：回到任意目标 + 清空 safilter（决策 #27）。 */
         public void saReset() {
             this.saMode = SaProfile.Mode.ANY;
             clearSaFilter();
+        }
+
+        /**
+         * {@code /msl default}：把该玩家的**全部会话级导弹设置**恢复出厂值。
+         *
+         * <p>明确**不动**两样东西（条目要求）：玩家选的型号，以及 {@code /msl on|off} 开关。
+         * 导引头一并关闭（"默认"= 没开着导引头）；全局 filter 白名单由命令层另行清空。
+         */
+        public void resetToDefaults() {
+            this.irMode = IrMode.DEFAULT;
+            this.irUseFilter = false;
+            saReset();
+            disarm();
         }
 
         /** 把实体 ID 写进 safilter（调用方负责先做规范化 / 别名展开）。 */
@@ -463,7 +533,11 @@ public final class SeekerListener implements Listener {
                 this.saPlayerIds.add(playerId);
             }
             if (playerName != null && !playerName.isBlank()) {
-                this.saPlayerNames.add(playerName.toLowerCase(Locale.ROOT));
+                String lower = playerName.toLowerCase(Locale.ROOT);
+                this.saPlayerNames.add(lower);
+                if (playerId != null) {
+                    this.saPlayerIndex.put(lower, playerId);
+                }
             }
         }
 
@@ -553,11 +627,16 @@ public final class SeekerListener implements Listener {
     /**
      * 给"已锁定"的状态栏文本加左右包裹（§2.5）。
      *
+     * <p><b>与主文本之间的空格</b>：条目要求**左右两侧都与主文本相隔一个空格** ——
+     * 改造前是把配置原样前后各贴一份，配置自带的前导空格只让**右侧**有空格，
+     * 左侧的乱码字符会直接顶着型号名（看起来挤在一起）。现在统一由这里补空格，
+     * 配置里首尾的空白不再有意义（1.0.2 的 {@code " &f&k1"} 与新的 {@code "&f&k1"} 结果一致）。
+     *
      * <p>只对包裹段本身做一次着色，免得把模板或玩家名里可能出现的 {@code &} 当成色码。
      * 配置写成空串时原样返回 —— 纯函数，脱离服务端也能验证。
      */
     static String padLocked(String rendered) {
-        String padding = Lang.colorize(Settings.seekerLockPadding());
-        return padding.isEmpty() ? rendered : padding + rendered + padding;
+        String padding = Lang.colorize(Settings.seekerLockPadding()).trim();
+        return padding.isEmpty() ? rendered : padding + " " + rendered + " " + padding;
     }
 }

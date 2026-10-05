@@ -19,7 +19,7 @@ command:
   status-detail: "&7锁定目标: &f{kind} &7| 导引头: {seeker} &7| 锁定: &f{target}"
   status-ir: "&7红外弹模式: &f{ir} &7| 白名单锁定(usefilter): {filter}"
   status-sa: "&7超级主动弹锁定类型: &f{sa}"
-  usage: "&7用法: &f/missile <ir|semi|active|semiLOS|super_active> [参数] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile status"
+  usage: "&7用法: &f/missile <ir|semi|active|semiLOS|super_active> [参数] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile default &7| &f/missile status"
   usage-brief: "&7管理: &f/missile global <on|off> &7| &f/missile reload &7| 手持 TNT 右键开启导引头，再右键发射"
   detail-beam: " &7| &b视线驾束"
   detail-decoy: " &7| 干扰 {decoy} {chance}%"
@@ -28,6 +28,8 @@ command:
   target-none: "无"
   enabled: "&a导弹已开启：手持 TNT 右键开启导引头，再右键发射"
   disabled: "&e导弹已关闭：手持 TNT 恢复原版行为（可正常放置 TNT）"
+  # /msl default：把执行者的全部导弹设置恢复默认（型号与 on/off 开关不受影响）
+  default-reset: "&a所有导弹设置已恢复默认（型号与 /msl on|off 开关保持不变）"
   status-switch: "&7导弹开关: {switch}"
   switch-on: "&a开启"
   switch-off: "&c关闭"
@@ -44,8 +46,15 @@ command:
   sa-filter-empty: "  &7(空 = 不限制)"
   sa-filter-entities: "  &7实体: &f{values}"
   sa-filter-players: "  &7玩家: &f{values}"
-  sa-filter-entity: "&aSA safilter 已写入实体: &f{id}"
-  sa-filter-player: "&aSA safilter 已写入玩家: &f{name}"
+  # ---- safilter 的条目增删（1.0.3：/msl super_active <entity|player> set|add|remove|clear）----
+  # {type} 是命令里写的类名（entity / player），{values} 是本次涉及的条目
+  sa-list-set: "&aSA safilter 的 &f{type} &a类已设为: &f{values}"
+  sa-list-added: "&aSA safilter 已追加 &f{type}&a: &f{values}"
+  sa-list-removed: "&aSA safilter 已移除 &f{type}&a: &f{values}"
+  sa-list-missing: "&e这些条目不在 safilter 里: &f{values}"
+  sa-list-none: "&e没有匹配的条目可移除: &f{values}"
+  sa-list-cleared: "&aSA safilter 的 &f{type} &a类已清空"
+  sa-list-usage: "&7用法: &f/msl super_active <entity|player> <set|add|remove|clear> [条目...]"
   sa-filter-alias: "&aSA safilter 已写入组别名 &f{input} &a展开出的 &f{count} &a个实体"
   sa-filter-cleared: "&aSA safilter 已清空，并退回默认（任意目标）"
   sa-filter-usage: "&7用法: &f/msl super_active filter <list|clear>"
@@ -62,12 +71,13 @@ kind:
   # ANY：候选类型由筛选白名单决定（/msl ir ... usefilter），可能同时包含玩家与生物
   any: "玩家/生物"
 
-# 「目标」字段（%msl_target_kind%，§2.1）：按**实际生效类别**显示 混合/任意/实体/玩家；SA 看 safilter
-# 用于 ActionBar 的 目标: 与占位符 %msl_target_kind%
+# 「目标」字段（%msl_target_kind%）：用于 ActionBar 的 目标: 与占位符 %msl_target_kind%
+# 1.0.3 口径：
+#  · 普通型号 —— 按**实际生效类别**（筛选白名单）显示；名单里没有任何具体目标 = 任意
+#  · 超级主动弹 —— 按 **safilter 的名单内容**显示：两类条目同时存在 = 混合
 target:
   player: "玩家"
   entity: "实体"
-  # §2.1：两类都启用 = 混合；完全没指定对象 = 任意
   mixed: "混合"
   any: "任意"
 
@@ -131,12 +141,16 @@ maws:
 
 # 目标筛选（/missile filter ...）
 filter:
-  usage: "&7用法: &f/missile filter <entity|player|clear|on|off> [set|add|clear] [ID...] &7例: &f/missile filter entity add zombie skeleton"
+  usage: "&7用法: &f/missile filter <entity|player|clear|on|off> [set|add|remove|clear] [ID...] &7例: &f/missile filter entity add zombie skeleton"
   applied: "&a筛选已更新: &f{mode} &7(/missile filter list 查看明细)"
   applied-type: "&a已更新 &f{type} &a类筛选: &f{values}"
   cleared-all: "&a已清空全部筛选数据"
   cleared-entity: "&a已清除 entity 类的筛选数据"
   cleared-player: "&a已清除 player 类的筛选数据"
+  # ---- remove（1.0.3 新增）：从名单里摘掉已添加的条目 ----
+  removed-type: "&a已从 &f{type} &a类筛选里移除: &f{values}"
+  removed-none: "&e{type} 类筛选里没有这些条目"
+  removed-missing: "&e这些条目本来就不在名单里: &f{values}"
   mode-all: "自由锁定（忽略筛选数据）"
   mode-filter: "仅锁定筛选白名单内目标"
   error-empty-whitelist: "&c白名单是空的，筛选模式没有开启（空白名单 = 什么都锁不上）。请先 /missile filter entity <实体ID> 或 /missile filter player <玩家名>"

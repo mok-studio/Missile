@@ -399,6 +399,8 @@ final class FilterStorage {
             if (data.enabled && data.isEmpty()) {
                 data.enabled = false;
             }
+            // 重建"名字 → UUID"索引（1.0.3 的 filter remove 要用它把 UUID 与名字一起摘掉）
+            data.reindexPlayers();
             return data;
         }
     }

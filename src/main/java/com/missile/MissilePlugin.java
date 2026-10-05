@@ -19,7 +19,7 @@ import org.bukkit.scheduler.BukkitTask;
 public final class MissilePlugin extends JavaPlugin {
 
     /** 插件版本号：写在代码内（按要求不放进 config.yml）。 */
-    public static final String VERSION = "1.0.2";
+    public static final String VERSION = "1.0.3";
 
     /**
      * 全服导弹开关（{@code /msl global on|off}）：启动时取 msl_config.yml 的

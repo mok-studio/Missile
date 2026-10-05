@@ -1,5 +1,5 @@
 name: Missile
-version: '1.0.2'
+version: '1.0.3'
 main: com.missile.MissilePlugin
 api-version: '1.21'
 description: 'TNT guided missiles: IR / Semi-Active / Active radar homing, semiLOS beam riding and super active.'

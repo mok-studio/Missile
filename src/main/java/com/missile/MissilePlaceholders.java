@@ -18,7 +18,7 @@ import org.bukkit.entity.Player;
  *   <tr><td>{@code %msl_entity_name%}</td><td>导引头锁定的目标名（玩家显示玩家 ID）；没锁定时显示"搜索中"</td></tr>
  *   <tr><td>{@code %msl_locked%}</td><td>当前是否有锁定（{@code true} / {@code false}）</td></tr>
  *   <tr><td>{@code %msl_lock%}</td><td>整句锁定状态（"锁定 X" / "搜索中"）</td></tr>
- *   <tr><td>{@code %msl_target_kind%}</td><td>「目标」类型，按 {@code /msl filter} 的**内容**判断（玩家 / 实体 / 玩家/实体）</td></tr>
+ *   <tr><td>{@code %msl_target_kind%}</td><td>「目标」类型：{@code 混合} / {@code 任意} / {@code 实体} / {@code 玩家}（普通型号按实际生效类别，SA 按 safilter 名单内容）</td></tr>
  *   <tr><td>{@code %msl_maws%}</td><td>MAWS 最近威胁的方位箭头；无威胁时空串</td></tr>
  *   <tr><td>{@code %msl_armed%}</td><td>导引头是否已开启（{@code true} / {@code false}）</td></tr>
  *   <tr><td>{@code %msl_on%}</td><td>该玩家个人导弹开关（{@code /msl on|off}）</td></tr>
@@ -130,15 +130,16 @@ public final class MissilePlaceholders extends PlaceholderExpansion {
     }
 
     /**
-     * ActionBar 里「**目标:**」那个字段的取值（§2.1 / 决策 #33）。
+     * ActionBar 里「**目标:**」那个字段的取值（§2.1 / 决策 #33，1.0.3 按条目要求调整）。
      *
      * <p>文案是 **混合 / 任意 / 实体 / 玩家**，口径 = **实际生效类别**：
      * <ul>
-     *   <li>{@code SUPER_ACTIVE} → 看 **safilter**（{@link SaProfile} 的三种模式）：
-     *       {@code ANY → 任意}、{@code ENTITY → 实体}、{@code PLAYER → 玩家}；</li>
+     *   <li>{@code SUPER_ACTIVE} → 看 **safilter 的名单内容**（{@link #saLabel}）：
+     *       两类条目同时存在 → **混合**（1.0.3 修改：不再只显示"最新添加的那一类"）；
+     *       只有实体 → 实体；只有玩家 → 玩家；名单为空 → 按 {@code default/entity/player} 模式；</li>
      *   <li>其它型号 → 看 {@code TargetSelector#activeClasses}：筛选模式（或 {@code usefilter}）打开时
-     *       以白名单启用的类别为准（两类都启用 = **混合**）；筛选没生效时按导弹自己的锁定类型，
-     *       {@code ANY} 显示"任意"；</li>
+     *       以白名单启用的类别为准（两类都启用 = **混合**）；
+     *       **名单里没有任何具体目标时统一显示「任意」**（1.0.3 修改：不再回落到导弹自己的锁定类型）；</li>
      *   <li>没有导引头状态时按"玩家"起步（与 {@code lockKind} 的默认值一致）。</li>
      * </ul>
      *
@@ -147,19 +148,39 @@ public final class MissilePlaceholders extends PlaceholderExpansion {
      */
     private static String targetLabel(Player player, SeekerListener.SeekerState state) {
         if (state != null && state.type() == MissileType.SUPER_ACTIVE) {
-            return switch (state.saProfile().mode()) {
-                case ANY -> Lang.get("target.any");
-                case ENTITY -> Lang.get("target.entity");
-                case PLAYER -> Lang.get("target.player");
-            };
+            return saLabel(state.saProfile());
         }
-        MissileType.TargetKind kind = state == null ? MissileType.TargetKind.PLAYER : state.lockKind();
         boolean whitelistOnly = state != null && state.whitelistOnly();
-        String none = switch (kind) {
+        // 「没有具体目标 → 任意」：TargetFilter.labelOf 只在类别为 NONE 时用到这个兜底值
+        return TargetFilter.labelOf(TargetSelector.activeClasses(player, whitelistOnly), Lang.get("target.any"));
+    }
+
+    /**
+     * safilter 的「目标」文案：**按名单内容**折算，两类条目同时存在 = 混合。
+     *
+     * <p>为什么不能只看模式：{@code /msl super_active entity add zombie} 之后再
+     * {@code /msl super_active player add Steve}，名单里两类条目都在（实际也两类都能锁），
+     * 只按"最后添加的那一类"显示会漏掉另一半。
+     *
+     * <p>名单为空时没有内容可依据，才回落到模式（{@code default} → 任意 / {@code entity} → 实体 /
+     * {@code player} → 玩家）。包内可见，便于离线验证程序直接断言。
+     */
+    static String saLabel(SaProfile profile) {
+        boolean hasEntities = !profile.entityIds().isEmpty();
+        boolean hasPlayers = !profile.playerIds().isEmpty() || !profile.playerNames().isEmpty();
+        if (hasEntities && hasPlayers) {
+            return Lang.get("target.mixed");
+        }
+        if (hasEntities) {
+            return Lang.get("target.entity");
+        }
+        if (hasPlayers) {
+            return Lang.get("target.player");
+        }
+        return switch (profile.mode()) {
             case ANY -> Lang.get("target.any");
             case ENTITY -> Lang.get("target.entity");
             case PLAYER -> Lang.get("target.player");
         };
-        return TargetFilter.labelOf(TargetSelector.activeClasses(player, whitelistOnly), none);
     }
 }

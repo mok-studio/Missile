@@ -73,7 +73,7 @@ public final class Settings {
     private static double lockRange = 128.0D;
     private static double lockCone = 10.0D;
     private static int seekerRefreshTicks = 2;
-    private static String seekerLockPadding = " &f&k1";
+    private static String seekerLockPadding = "&f&k1";
     private static double muzzleOffset = 1.2D;
     private static int maxActiveMissiles = 64;
     private static int maxLifeTicks = 600;
@@ -540,7 +540,10 @@ public final class Settings {
 
     /**
      * 锁定目标时 ActionBar 两端各加的一段文本（§2.5）。配置键 {@code launcher.lock-padding}，
-     * 默认 {@code " &f&k1"}（一个空格 + 白色乱码）；写成空串 = 不加包裹。
+     * 默认 {@code "&f&k1"}（白色乱码）；写成空串 = 不加包裹。
+     *
+     * <p>**包裹段与主文本之间的那一个空格由 {@code SeekerListener#padLocked} 统一补**，
+     * 所以这里不再自带空格（值首尾的空白会被忽略，1.0.2 的写法 {@code " &f&k1"} 行为不变）。
      *
      * <p>只作用于"发射前已锁定"的那条 ActionBar：未锁定（搜索中）与驾束弹固定文案都不加。
      */
@@ -553,7 +556,7 @@ public final class Settings {
      */
     private static String readLockPadding(FileConfiguration config) {
         if (!config.isSet("launcher.lock-padding")) {
-            return " &f&k1";
+            return "&f&k1";
         }
         String value = config.getString("launcher.lock-padding");
         return value == null ? "" : value;

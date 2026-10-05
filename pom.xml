@@ -6,7 +6,7 @@
 
   <groupId>com.missile</groupId>
   <artifactId>Missile</artifactId>
-  <version>1.0.2</version>
+  <version>1.0.3</version>
   <packaging>jar</packaging>
   <name>Missile</name>
   <description>Guided missile plugin for Paper 1.21.11</description>
