@@ -16,8 +16,10 @@ command:
   selected: "&fType: &e{missile} &7| Lock: &f{kind} &7(initial {min} / max {max} m/s{extra})"
   status-missile: "&fCurrent type: &e{missile} &7(initial {min} m/s / max {max} m/s{extra})"
   status-detail: "&7Lock type: &f{kind} &7| Seeker: {seeker} &7| Locked: &f{target}"
-  usage: "&7Usage: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7| right-click with TNT to arm, again to fire"
-  usage-brief: "&7Usage: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7(arg1 defaults to ir, arg2 to player)"
+  status-ir: "&7IR mode: &f{ir} &7| whitelist lock (usefilter): {filter}"
+  status-sa: "&7SA missile lock type: &f{sa}"
+  usage: "&7Usage: &f/missile <ir|semi|active|semiLOS|super_active> [args] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile status"
+  usage-brief: "&7Admin: &f/missile global <on|off> &7| &f/missile reload &7| right-click with TNT to arm, again to fire"
   detail-beam: " &7| &bbeam riding"
   detail-decoy: " &7| countermeasure {decoy} {chance}%"
   state-on: "&aarmed"
@@ -28,14 +30,56 @@ command:
   status-switch: "&7Missile switch: {switch}"
   switch-on: "&aon"
   switch-off: "&coff"
+  global-switch: "&7Global missile system: {switch}"
+  # ---- admin commands (missile.admin) ----
+  reloaded: "&6[Missile] &aPlugin configuration reloaded!"
+  admin-only: "&cYou do not have permission to use this admin command"
+  global-on: "&aGlobal missile system enabled"
+  global-off: "&cGlobal missile system disabled (player settings untouched)"
+  sa-default: "&cSA missile settings restored to default"
+  sa-entity: "&aSA missile: target creatures (any non-player entity)"
+  sa-player: "&aSA missile: target players (excluding yourself)"
+  sa-filter-header: "&7SA safilter ({mode}):"
+  sa-filter-empty: "  &7(empty = unrestricted)"
+  sa-filter-entities: "  &7Entities: &f{values}"
+  sa-filter-players: "  &7Players: &f{values}"
+  sa-filter-entity: "&aSA safilter now allows entity: &f{id}"
+  sa-filter-player: "&aSA safilter now allows player: &f{name}"
+  sa-filter-alias: "&aSA safilter added group alias &f{input} &aexpanded into &f{count} &aentities"
+  sa-filter-cleared: "&aSA safilter cleared; back to default (any target)"
+  sa-filter-usage: "&7Usage: &f/msl super_active filter <list|clear>"
+  # ---- IR parameters (/msl ir ...) ----
+  ir-mode-default: "&aIR seeker: default (players first)"
+  ir-mode-player: "&aIR seeker: players first"
+  ir-mode-entity: "&aIR seeker: players first, switch to any creature after losing lock"
+  ir-usefilter-on: "&aIR seeker: usefilter on (follow the filter whitelist only)"
+  ir-usefilter-off: "&aIR seeker: usefilter off"
 
 kind:
   player: "player"
   entity: "entity"
+  # ANY: the candidate types come from the filter whitelist (/msl ir ... usefilter)
+  any: "player/creature"
+
+# "Target" field: judged by the CONTENT of /msl filter (player class only -> player;
+# entity class only -> entity; both -> mixed). Used by the ActionBar and %msl_target_kind%.
+target:
+  player: "player"
+  entity: "entity"
+  mixed: "Mixed"
+  any: "Any"
+
+# Short mode labels (shown by /msl status for the persistent /msl ir ... settings)
+mode:
+  ir-default: "default (players first)"
+  ir-player: "players first"
+  ir-entity: "players first, switch to any creature after losing lock"
 
 decoy:
-  blaze-rod: "blaze rod"
+  # key convention: decoy.<material name, lowercase, underscores to hyphens>
+  blaze-powder: "blaze powder"
   iron-nugget: "iron nugget"
+  immune: "immune"
 
 type:
   infrared: "Infrared"
@@ -44,20 +88,21 @@ type:
   semi-los: "Semi-Automatic LOS"
 
 seeker:
-  status: "&6{missile} &7| &fTarget:{kind} &7| {lock} &7| &fright-click to fire"
-  status-beam: "&6{missile} &7| &bbeam riding &7| &fright-click to fire"
+  # ActionBar template: %msl% / %msl_target_kind% / %msl_entity_name% are substituted
+  # (see MissilePlaceholders). The same tokens are PlaceholderAPI placeholders, so TAB and
+  # scoreboard plugins can reuse them.
+  # Override this line with "seeker.status" under messages: in config.yml.
+  status: "&7%msl% &7| &fTarget: %msl_target_kind% &7| &aLocked &f%msl_entity_name% &7| &fright-click to fire"
+  status-beam: "&b{missile} &7| &fTarget: follows your screen crosshair &7| &fright-click to fire"
   lock-search: "&csearching"
   lock-found: "&alocked &f{target}"
   closed: "&7Seeker closed (hold TNT)"
   need-illumination: "&c{missile} needs a visible {kind} to keep illuminating; not fired"
-  launched: "&aFired {missile} &7[{kind}]{detail}"
-  launched-beam: " &7beam riding"
-  launched-none: " &7(no initial lock, self-search)"
-  launched-target: " &7→ &f{target}"
+  launched: "%msl% &aFired"
   designate-switch: "&aIllumination target switched: &f{target}"
 
 missile:
-  decoy-infrared: "&cIR seeker lost lock; turning to the blaze rod heat source: &f{target}"
+  decoy-infrared: "&cIR seeker lost lock; decoyed by {target}'s dropped blaze powder"
   decoy-active: "&eActive radar jammed by iron nugget; lock lost, re-searching"
   decoy-semi-active: "&eSemi-active radar jammed by iron nugget; illumination link broken"
 
@@ -77,19 +122,36 @@ rwr:
   dir-6: "←"
   dir-7: "↖"
 
+# MAWS (Missile Approach Warning System): alerts when any missile in flight is within 40 blocks;
+# coexists with RWR as a second, red boss bar.
+# %msl_maws% is replaced by the bearing arrow (it reuses the rwr.dir-0..7 entries above).
+# Override the text with "maws.bossbar" under messages: in config.yml.
+maws:
+  bossbar: "&c⚠ MAWS: %msl_maws%"
+
 # Target filter (/missile filter ...)
 filter:
-  usage: "&7Usage: &f/missile filter <all|clear|list|entity|player|!player|entityId...> &7e.g. &f/missile filter entity zombie !creeper"
-  applied-all: "&aFree targeting restored (filter list is ignored but kept)"
-  applied-clear: "&aFilter list cleared, free targeting restored"
+  usage: "&7Usage: &f/missile filter <entity|player|clear|on|off> [set|add|clear] [id...] &7e.g. &f/missile filter entity add zombie skeleton"
   applied: "&aFilter updated: &f{mode} &7(see /missile filter list)"
-  mode-all: "free targeting (filter list ignored)"
-  mode-filter: "only targets inside the filter list"
-  error-conflict: "&cCannot use entity and player together (entity already means non-player mobs); run /missile filter clear first"
+  applied-type: "&aUpdated &f{type} &afilter: &f{values}"
+  cleared-all: "&aAll filter data cleared"
+  cleared-entity: "&aEntity filter data cleared"
+  cleared-player: "&aPlayer filter data cleared"
+  mode-all: "free targeting (filter data ignored)"
+  mode-filter: "only targets inside the filter whitelist"
+  error-empty-whitelist: "&cThe whitelist is empty, so filter mode was NOT enabled (an empty whitelist locks nothing). Set it first with /missile filter entity <id> or /missile filter player <name>"
+  auto-off-empty: "&eThe whitelist is now empty, so filter mode was turned off automatically (back to free targeting)"
+  error-need-value: "&c{mode} needs at least one id; that argument was ignored"
+  error-player-as-entity: "&cCannot use minecraft:player as an entity id (use the player type)"
   unknown-id: "&cUnknown entity id: &f{input} &7(use zombie or minecraft:zombie)"
+  alias-expanded: "&7Note: &f{input} &7is a group alias; expanded into &f{count} &7entity ids"
+  unknown-player: "&cPlayer not found: &f{input}"
+  values-any-entity: "any creature (no id specified)"
+  values-all-players: "all players"
   list-header: "&6[Missile] &fCurrent target filter: &e{mode}"
-  list-types: "&7Include types: &f{include} &7| Exclude types: &f{exclude}"
-  list-ids: "&7Include entities: &f{include} &7| Exclude entities: &f{exclude}"
+  list-types: "&7Enabled types: &f{types}"
+  list-ids: "&7Entity whitelist: &f{ids}"
+  list-players: "&7Player whitelist: &f{players}"
   none: "(none)"
 
 # Super active missile (/msl super_active)

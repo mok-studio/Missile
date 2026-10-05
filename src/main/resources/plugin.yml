@@ -1,21 +1,27 @@
 name: Missile
-version: '1.0.0'
+version: '1.0.2'
 main: com.missile.MissilePlugin
 api-version: '1.21'
-description: 'TNT guided missiles: IR / Semi-Active / Active radar homing, plus semiLOS beam riding.'
+description: 'TNT guided missiles: IR / Semi-Active / Active radar homing, semiLOS beam riding and super active.'
 authors: [Missile]
+# 软依赖：装了 PlaceholderAPI 就自动注册 identifier 为 msl 的扩展
+# （%msl% / %msl_entity_name% / %msl_maws% 等，TAB 的 placeholder-output-replacements 可直接用）；
+# 没装也照常运行——PAPI 是 provided 依赖，不会打进 jar。
+softdepend: [PlaceholderAPI]
 
 commands:
   missile:
-    description: 'Select missile type / inspect seeker state.'
-    usage: '/missile <ir|semi|active|semiLOS> <player|entity>'
+    description: 'Guided missile system: types, target filter, switches and admin commands.'
+    usage: '/missile <ir|semi|active|semiLOS|super_active|filter|on|off|status|global|reload>'
     aliases: [msl]
-    permission: missile.use
+    # 故意不在命令级声明 permission：管理命令只要求 missile.admin，
+    # 若这里写 missile.use，只带 missile.admin 的管理员会被挡在外面。
+    # 权限改由代码按子命令校验（missile.use / missile.admin）。
 
 permissions:
   missile.use:
-    description: 'Use the TNT seeker and every missile type.'
+    description: 'Use the TNT seeker, missile types, /missile filter and /missile on|off.'
     default: true
-  missile.superactive:
-    description: 'Use the super active missile (/msl super_active).'
+  missile.admin:
+    description: 'Use /missile super_active, /missile global on|off and /missile reload.'
     default: op

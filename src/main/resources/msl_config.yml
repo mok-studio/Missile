@@ -1,0 +1,313 @@
+# ============================================================
+#  Missile 导弹参数配置（msl_config.yml）
+#  · 本文件专放**导弹参数**：全服开关 / 发射与导引头 / 飞行 / 驾束 / 粒子 /
+#    模型 / 战斗部 / 型号性能 / RWR / MAWS
+#  · 通用项（语言、文案覆盖、筛选数据存储）在 config.yml
+#  · 改完可用 /msl reload 热重载（需要 missile.admin 权限），不必重启
+#  · 删掉某一行 = 该项回落到插件内置默认值，不会报错
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 全服导弹开关
+# ------------------------------------------------------------
+missile:
+  # 启动时的初值；运行期用 /msl global <on|off> 切换（需要 missile.admin）。
+  # 它与玩家个人的 /msl on|off 相互独立：两者都开启时该玩家才能使用导弹。
+  global-enabled: true
+  # true  = /msl global 切换后把新值**写回本文件**（只替换下面 global-enabled 那一行的值，
+  #         注释、空行、键顺序全部保留），因此重启后仍然记得上次的开关状态。
+  # false = 回到旧行为：只在内存里切换，重启后回到 global-enabled 的初值。
+  persist-global-switch: true
+
+# ------------------------------------------------------------
+# 发射与导引头（手持 TNT 右键的那条链路）
+# ------------------------------------------------------------
+launcher:
+  # 导引头锁定距离（格）
+  lock-range: 128.0
+  # 准星锥角半角（度）：准星附近有多个目标时取最近者
+  lock-cone: 10.0
+  # 导引头提示与锁定的刷新周期（tick）：越小越跟手，也越费性能
+  refresh-interval-ticks: 2
+  # 锁定目标时，在 ActionBar 文字**左右两端**各加的一段（§2.5）
+  # 默认是一个空格 + 白色乱码 &f&k1；写成 "" = 不加包裹
+  # 注意引号要保留，否则开头那个空格会被 YAML 吃掉
+  lock-padding: " &f&k1"
+  # 出膛点相对眼睛的前移距离（格）
+  muzzle-offset: 1.2
+  # 同时在飞的导弹上限，超出时丢弃最旧的一发
+  max-active: 64
+
+# ------------------------------------------------------------
+# 弹体飞行（与型号无关的公共部分）
+# ------------------------------------------------------------
+flight:
+  # 弹体最长寿命（tick）：600 = 30 秒，超时自毁
+  max-life-ticks: 600
+  # 近炸引信半径（格）：与目标距离小于它即引爆
+  proximity-fuse: 3.0
+  # 脱锁后的惯性记忆时长（tick）：这段时间按最后已知位置继续飞
+  inertial-memory-ticks: 100
+  # 雷达制导弹被干扰后的重新截获延迟（tick）
+  reacquire-delay-ticks: 60
+
+# ------------------------------------------------------------
+# 干扰（诱饵）机制
+#  · **只有玩家丢出**的干扰物才有效（require-thrown）；拿在手上不再算干扰源
+#  · 红外弹 = 烈焰粉（丢出后 15% 概率让导弹脱锁，并改锁那件掉落的烈焰粉）
+#  · 雷达弹（半主动 / 主动）= 铁粒（丢出后按各自概率脱锁）
+#  · 超级主动弹免疫一切干扰；驾束弹不参与干扰判定
+#  · 每个型号的干扰物与概率仍在该型号的 types.<id>.decoy-* 里配置
+#  · 旧版写在 flight.decoy-interval-ticks / flight.decoy-search-range 里的值仍会被读取
+# ------------------------------------------------------------
+decoy:
+  # 干扰判定周期（tick）：每隔这么久做一次脱锁判定
+  interval-ticks: 20
+  # 干扰源搜索半径（格）：在这个范围内找丢出的干扰物
+  search-range: 48.0
+  # true = 只有玩家丢出的干扰物才有效（推荐）
+  # false = 手持干扰物也算（旧行为；只有需要回退时才改）
+  require-thrown: true
+  # 丢出的干扰物有效时长（tick）：60 = 3 秒，超时后不再算干扰源
+  ttl-ticks: 60
+  # 被干扰后的"脱锁保护"时长（tick）：100 = 5 秒
+  # 这段时间内导弹不会重新锁回干扰源（红外 = 丢出烈焰粉的玩家）。写 0 = 关闭保护
+  lockout-ticks: 100
+
+# ------------------------------------------------------------
+# 驾束（semiLOS 半自动指令瞄准线）
+# ------------------------------------------------------------
+beam:
+  # 驾束射线长度（格）：准星方向上的指令瞄准线长度
+  length: 200.0
+  # 最小射线长度（格）：贴脸时避免抖动
+  min-length: 8.0
+
+# ------------------------------------------------------------
+# 尾焰 / 尾烟粒子
+# ------------------------------------------------------------
+particles:
+  # 附近多少格内有玩家才生成粒子（省性能）
+  viewer-range: 96.0
+  # 尾焰主粒子（各型号自己的 flame-particle）
+  flame-count: 4
+  flame-spread: 0.06
+  flame-extra: 0.0
+  # 尾焰内芯（固定的 SMALL_FLAME）
+  inner-flame-count: 2
+  inner-flame-spread: 0.05
+  inner-flame-extra: 0.0
+  # 尾烟主粒子（各型号自己的 smoke-particle）
+  smoke-count: 3
+  smoke-spread: 0.14
+  smoke-extra: 0.004
+  # 尾烟外层（固定的 CLOUD）
+  cloud-count: 2
+  cloud-spread: 0.16
+  cloud-extra: 0.002
+  # 尾焰相对弹体向后的偏移（格）
+  back-offset: 0.55
+  # 尾烟再往后推的倍数（相对 back-offset）
+  smoke-back-multiplier: 3.0
+
+# ------------------------------------------------------------
+# 战斗部
+# ------------------------------------------------------------
+explosion:
+  # true  = 爆炸破坏地形并伤害实体（默认，符合 TNT 导弹的直觉）
+  # false = 只伤害实体、不破坏方块（保护型服务器建议 false）
+  break-blocks: true
+
+
+
+# ============================================================
+#  导弹型号参数
+#  · 下面每个数字/名字都是"出厂默认值"，直接改这里即可调整性能，
+#    不需要改代码、不需要重新编译；改完 /msl reload 生效（需要 missile.admin）。
+#  · 删掉某一行 = 该项回落到插件内置的出厂默认值，不会报错。
+#  · 单位：速度与距离 = 米/秒 与 格，加速度 = (米/秒)每 tick，转弯率 = 度/tick
+#  · decoy-chance 是 0~1 的概率（0.15 = 15%）；写 0 = 该型号免疫干扰
+#  · decoy-material / *-particle 必须是 Bukkit 的枚举名（大小写不敏感），
+#    写错会在控制台告警一次并使用内置默认值
+#  · 五个型号的配置键：infrared / semi-active / active / semi-los / super-active
+# ============================================================
+types:
+  # ---------------- 红外弹（自主追踪，可被丢出的烈焰粉干扰） ----------------
+  infrared:
+    # 型号名颜色（%msl% / {missile} 输出时自带）：可自由改成任意 & 色码
+    color: '&c'
+    # 发射瞬间速度（米/秒）
+    initial-speed: 5.0
+    # 加速上限（米/秒）
+    max-speed: 25.0
+    # 每 tick 加速度（米/秒 每 tick）
+    acceleration: 1.0
+    # 每 tick 最大转弯角（度）
+    turn-rate: 6.0
+    # 干扰物；玩家**丢出**它才可能触发干扰（decoy.require-thrown）
+    decoy-material: BLAZE_POWDER
+    # 每次干扰判定的脱锁概率（0~1）
+    decoy-chance: 0.15
+    # 战斗部爆炸威力（原版 TNT = 4.0）
+    explosion-power: 3.0
+    # true = 发射后自主追踪，不需要发射者持续照射
+    autonomous: true
+    # true = 脱锁后直接转向追踪干扰源（红外弹特性）
+    retargets-decoy: true
+    # 自主重新截获距离（格）
+    acquire-range: 55.0
+    # 自主重新截获锥角（度）
+    acquire-cone: 30.0
+    # 尾焰粒子
+    flame-particle: FLAME
+    # 尾烟粒子
+    smoke-particle: LARGE_SMOKE
+  # ---------------- 半主动雷达弹（需持续照射，铁粒干扰，脱锁即永久失效） ----------------
+  semi-active:
+    # 型号名颜色（%msl% / {missile} 输出时自带）：可自由改成任意 & 色码
+    color: '&6'
+    initial-speed: 5.2
+    max-speed: 30.0
+    acceleration: 1.2
+    turn-rate: 4.0
+    decoy-material: IRON_NUGGET
+    decoy-chance: 0.05
+    explosion-power: 3.5
+    autonomous: false
+    retargets-decoy: false
+    # 半主动型这里表示发射者的照射距离（格）
+    acquire-range: 128.0
+    # 半主动型这里表示准星照射锥角（度）
+    acquire-cone: 10.0
+    flame-particle: SMALL_FLAME
+    smoke-particle: CAMPFIRE_COSY_SMOKE
+  # ---------------- 主动雷达弹（自主 + 提前量 + 脱锁后自主重截获） ----------------
+  active:
+    # 型号名颜色（%msl% / {missile} 输出时自带）：可自由改成任意 & 色码
+    color: '&a'
+    initial-speed: 6.0
+    max-speed: 40.0
+    acceleration: 1.5
+    turn-rate: 7.0
+    decoy-material: IRON_NUGGET
+    decoy-chance: 0.025
+    explosion-power: 4.5
+    autonomous: true
+    retargets-decoy: false
+    acquire-range: 70.0
+    acquire-cone: 40.0
+    flame-particle: COPPER_FIRE_FLAME
+    smoke-particle: WHITE_SMOKE
+  # ---------------- 半自动指令瞄准线（驾束，跟随发射者视线） ----------------
+  semi-los:
+    # 型号名颜色（%msl% / {missile} 输出时自带）：可自由改成任意 & 色码
+    color: '&b'
+    initial-speed: 5.2
+    max-speed: 30.0
+    acceleration: 1.2
+    # 该型号转弯率较高，便于手动"甩"出弧线
+    turn-rate: 12.0
+    # 驾束弹不参与干扰判定，这里写 AIR + 下面的 0
+    decoy-material: AIR
+    # 0 = 免疫干扰（该型号按需求不参与任何干扰判定）
+    decoy-chance: 0.0
+    explosion-power: 3.5
+    # 驾束弹不需要自主寻的
+    autonomous: false
+    retargets-decoy: false
+    # 驾束弹不锁定目标，以下两项留 0
+    acquire-range: 0.0
+    acquire-cone: 0.0
+    flame-particle: SOUL_FIRE_FLAME
+    smoke-particle: SMOKE
+  # ---------------- 超级主动弹（高速 + 大威力 + 完全免疫干扰） ----------------
+  # 注意 max-speed: 850 相当于 42.5 格/tick，可能一 tick 直接跨过近炸引信半径，
+  # 若实战发现"穿模不炸"，把 max-speed 调低（例如 200~400）。
+  super-active:
+    # 型号名颜色（%msl% / {missile} 输出时自带）：可自由改成任意 & 色码
+    color: '&a'
+    initial-speed: 8.0
+    max-speed: 850.0
+    acceleration: 4.0
+    turn-rate: 30.0
+    decoy-material: AIR
+    # 0 = 免疫一切干扰
+    decoy-chance: 0.0
+    explosion-power: 10.0
+    autonomous: true
+    retargets-decoy: false
+    acquire-range: 100.0
+    acquire-cone: 45.0
+    flame-particle: COPPER_FIRE_FLAME
+    smoke-particle: WHITE_SMOKE
+
+
+# ============================================================
+#  RWR（雷达告警接收机）
+#  · 开机条件（三条全满足才会以 BossBar 告警）：
+#      ① 拥有权限节点 missile.use
+#      ② 自己用 /msl on 开启了导弹模式
+#      ③ 背包里含有指南针 minecraft:compass
+#    注意语义：受害者自己 /msl off 之后就收不到任何告警（已与需求方确认）。
+#  · 只有半主动雷达弹与雷达制导弹（主动 / 超级主动）会触发告警；
+#    红外弹与半自动指令瞄准线不辐射，不触发 RWR。
+# ============================================================
+rwr:
+  # 总开关：false = 完全不告警（BossBar 与告警音都关）
+  enabled: true
+  # 告警距离上限（格）：超过这个距离的威胁不提示
+  alert-range: 256.0
+  sound:
+    # 是否播放告警音（关掉只留 BossBar 视觉提示）
+    enabled: true
+    # 敌跟踪（被照射）告警音间隔，单位 tick（20 tick = 1 秒）
+    # 需求值：0.2s = 4 tick。高音 / 低音交替
+    track-interval-ticks: 4
+    # 敌导弹（有弹正在飞向自己）告警音间隔，单位 tick
+    # 需求值：0.1s = 2 tick。急促高音
+    missile-interval-ticks: 2
+    # 敌跟踪音：音量 0~10（>1 会被客户端放大），音调 0.5~2.0
+    track-volume: 0.7
+    track-high-pitch: 1.8
+    track-low-pitch: 0.7
+    # 敌导弹音
+    missile-volume: 1.0
+    missile-pitch: 1.6
+
+# ============================================================
+#  MAWS（导弹逼近告警接收机）
+#  · 开机条件与 RWR **完全相同**：拥有 missile.use（或 missile.admin）+ 自己 /msl on
+#    + 背包内含指南针 minecraft:compass
+#  · 与 RWR **并存**：两条独立的 BossBar，不会互相顶掉
+#  · 触发条件：附近（range 格内）有**接近率大于 closing-speed** 的
+#    **箭 / 光灵箭 / 三叉戟** 或**任何在飞的导弹**（不限型号）
+#    "接近率" = 该实体**相对你**的速度，投影到"它 → 你"方向上的分量：
+#      正 = 正在逼近（告警），负 = 正在远离（不告警）
+#  · 因此**你自己刚发射、正在飞离的弹不会报自己**；调 closing-speed: 0 就退回
+#    "只要在范围里就报"的旧行为
+#  · BossBar 文本是语言文件里的 maws.bossbar（默认 `&c⚠ MAWS: %msl_maws%`），
+#    其中 %msl_maws% 会被替换成方向箭头（箭头取自语言文件的 rwr.dir-0..7）。
+#    想改文案：在 config.yml 的 messages: 里用同一个 key 覆盖即可，例如
+#      messages:
+#        "maws.bossbar": "&c⚠ 导弹逼近: %msl_maws%"
+# ============================================================
+maws:
+  # 总开关
+  enabled: true
+  # 触发距离（格）：需求为 40 格以内
+  range: 40.0
+  # 触发所需的最小接近率（米/秒 = 格/秒）：需求为 10
+  # 调大 = 更迟钝（只报高速逼近的东西）；调 0 = 不做接近率过滤
+  closing-speed: 10.0
+  # false = 你自己射出的箭 / 导弹不给你告警（默认；发射者不会刚打完就自曝）
+  # true  = 也算进去（自己打的弹绕回来时同样会报警）
+  include-own: false
+  sound:
+    # 是否播放告警音。
+    # 默认 false：RWR 的"敌导弹"音与 MAWS 会同时存在（间隔都可能很短），听起来像双重音；
+    # 想让 MAWS 自己也响就改成 true
+    enabled: false
+    # 告警音间隔（tick）：20 tick = 1 秒
+    interval-ticks: 2
+

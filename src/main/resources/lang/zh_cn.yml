@@ -17,8 +17,10 @@ command:
   selected: "&f型号: &e{missile} &7| 锁定目标: &f{kind} &7(初速 {min} / 最大 {max} m/s{extra})"
   status-missile: "&f当前型号: &e{missile} &7(初速 {min} m/s / 最大 {max} m/s{extra})"
   status-detail: "&7锁定目标: &f{kind} &7| 导引头: {seeker} &7| 锁定: &f{target}"
-  usage: "&7用法: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7| 手持 TNT 右键开启导引头，再右键发射"
-  usage-brief: "&7用法: &f/missile <ir|semi|active|semiLOS> <player|entity> &7| &f/missile <on|off> &7(参数1缺省 ir，参数2缺省 player)"
+  status-ir: "&7红外弹模式: &f{ir} &7| 白名单锁定(usefilter): {filter}"
+  status-sa: "&7超级主动弹锁定类型: &f{sa}"
+  usage: "&7用法: &f/missile <ir|semi|active|semiLOS|super_active> [参数] &7| &f/missile filter ... &7| &f/missile <on|off> &7| &f/missile status"
+  usage-brief: "&7管理: &f/missile global <on|off> &7| &f/missile reload &7| 手持 TNT 右键开启导引头，再右键发射"
   detail-beam: " &7| &b视线驾束"
   detail-decoy: " &7| 干扰 {decoy} {chance}%"
   state-on: "&a已开启"
@@ -29,14 +31,57 @@ command:
   status-switch: "&7导弹开关: {switch}"
   switch-on: "&a开启"
   switch-off: "&c关闭"
+  global-switch: "&7全服导弹系统: {switch}"
+  # ---- 管理命令（需要 missile.admin）----
+  reloaded: "&6[Missile] &a插件配置重载完成！"
+  admin-only: "&c你没有权限使用该管理命令"
+  global-on: "&a已开启全服导弹系统"
+  global-off: "&c已关闭全服导弹系统（玩家个人设置不受影响）"
+  sa-default: "&cSA导弹设置已恢复默认"
+  sa-entity: "&aSA导弹设置: 锁定生物（除玩家外的任意实体）"
+  sa-player: "&aSA导弹设置: 锁定玩家（除自己）"
+  sa-filter-header: "&7SA safilter（{mode}）:"
+  sa-filter-empty: "  &7(空 = 不限制)"
+  sa-filter-entities: "  &7实体: &f{values}"
+  sa-filter-players: "  &7玩家: &f{values}"
+  sa-filter-entity: "&aSA safilter 已写入实体: &f{id}"
+  sa-filter-player: "&aSA safilter 已写入玩家: &f{name}"
+  sa-filter-alias: "&aSA safilter 已写入组别名 &f{input} &a展开出的 &f{count} &a个实体"
+  sa-filter-cleared: "&aSA safilter 已清空，并退回默认（任意目标）"
+  sa-filter-usage: "&7用法: &f/msl super_active filter <list|clear>"
+  # ---- 红外弹参数（/msl ir ...）----
+  ir-mode-default: "&a红外弹设置: 默认（玩家优先）"
+  ir-mode-player: "&a红外弹设置: 玩家优先"
+  ir-mode-entity: "&a红外弹设置: 玩家优先，丢失玩家后转任意实体"
+  ir-usefilter-on: "&a红外弹: 已启用 usefilter（完全按筛选白名单锁定）"
+  ir-usefilter-off: "&a红外弹: 已关闭 usefilter"
 
 kind:
   player: "玩家"
   entity: "生物"
+  # ANY：候选类型由筛选白名单决定（/msl ir ... usefilter），可能同时包含玩家与生物
+  any: "玩家/生物"
+
+# 「目标」字段（%msl_target_kind%，§2.1）：按**实际生效类别**显示 混合/任意/实体/玩家；SA 看 safilter
+# 用于 ActionBar 的 目标: 与占位符 %msl_target_kind%
+target:
+  player: "玩家"
+  entity: "实体"
+  # §2.1：两类都启用 = 混合；完全没指定对象 = 任意
+  mixed: "混合"
+  any: "任意"
+
+# 模式短标签（/msl status 展示 /msl ir ... 的持久设置）
+mode:
+  ir-default: "默认（玩家优先）"
+  ir-player: "玩家优先"
+  ir-entity: "玩家优先，丢失后转任意实体"
 
 decoy:
-  blaze-rod: "烈焰棒"
+  # key 约定：decoy.<材质名小写、下划线转连字符>（换干扰物只改这里，不必改代码）
+  blaze-powder: "烈焰粉"
   iron-nugget: "铁粒"
+  immune: "免疫干扰"
 
 type:
   infrared: "红外导弹"
@@ -45,20 +90,20 @@ type:
   semi-los: "半自动指令瞄准线"
 
 seeker:
-  status: "&6{missile} &7| &f目标:{kind} &7| {lock} &7| &f再右键发射"
-  status-beam: "&6{missile} &7| &b视线驾束 &7| &f再右键发射"
+  # 导引头状态栏模板：%msl% / %msl_target_kind% / %msl_entity_name% 会被替换（见 MissilePlaceholders）。
+  # 它同时也是 PlaceholderAPI 的占位符名，所以 TAB / 计分板里可以复用同一套写法。
+  # 想改文案：在 config.yml 的 messages: 里用 "seeker.status" 覆盖这一行即可。
+  status: "&7%msl% &7| &f目标: %msl_target_kind% &7| &a锁定 &f%msl_entity_name% &7| &f按右键发射"
+  status-beam: "&b{missile} &7| &f目标：跟随玩家屏幕准星 &7| &f按右键发射"
   lock-search: "&c搜索中"
   lock-found: "&a锁定 &f{target}"
   closed: "&7导引头已关闭（需要手持 TNT）"
   need-illumination: "&c{missile}需要视线内{kind}持续照射，未发射"
-  launched: "&a发射 {missile} &7[{kind}]{detail}"
-  launched-beam: " &7视线驾束"
-  launched-none: " &7(无初始锁定，自主搜索)"
-  launched-target: " &7→ &f{target}"
+  launched: "%msl% &a已发射"
   designate-switch: "&a照射目标切换: &f{target}"
 
 missile:
-  decoy-infrared: "&c红外导引头脱锁，转向烈焰棒热源: &f{target}"
+  decoy-infrared: "&c红外导引头脱锁，转向掉落的烈焰粉（{target} 投掷）"
   decoy-active: "&e主动雷达被铁粒干扰，脱锁重搜"
   decoy-semi-active: "&e半主动雷达被铁粒干扰，照射链路中断"
 
@@ -78,19 +123,35 @@ rwr:
   dir-6: "←"
   dir-7: "↖"
 
+# MAWS（导弹逼近告警接收机）：所有在飞导弹进入 40 格内即告警，与 RWR 并存（另一条红色 BossBar）
+# %msl_maws% 会被替换成方向箭头（箭头复用上面的 rwr.dir-0..7）。
+# 想改文案可在 config.yml 的 messages: 里用 "maws.bossbar" 覆盖。
+maws:
+  bossbar: "&c⚠ MAWS: %msl_maws%"
+
 # 目标筛选（/missile filter ...）
 filter:
-  usage: "&7用法: &f/missile filter <all|clear|list|entity|player|!player|实体ID...> &7例: &f/missile filter entity zombie !creeper"
-  applied-all: "&a已切回自由锁定（忽略筛选列表，列表内容保留）"
-  applied-clear: "&a已清空筛选列表，恢复自由锁定"
+  usage: "&7用法: &f/missile filter <entity|player|clear|on|off> [set|add|clear] [ID...] &7例: &f/missile filter entity add zombie skeleton"
   applied: "&a筛选已更新: &f{mode} &7(/missile filter list 查看明细)"
-  mode-all: "自由锁定（忽略筛选列表）"
-  mode-filter: "仅锁定筛选列表内目标"
-  error-conflict: "&c不能同时使用 entity 与 player（entity 已表示“非玩家生物”）；请先 /missile filter clear 再重新配置"
+  applied-type: "&a已更新 &f{type} &a类筛选: &f{values}"
+  cleared-all: "&a已清空全部筛选数据"
+  cleared-entity: "&a已清除 entity 类的筛选数据"
+  cleared-player: "&a已清除 player 类的筛选数据"
+  mode-all: "自由锁定（忽略筛选数据）"
+  mode-filter: "仅锁定筛选白名单内目标"
+  error-empty-whitelist: "&c白名单是空的，筛选模式没有开启（空白名单 = 什么都锁不上）。请先 /missile filter entity <实体ID> 或 /missile filter player <玩家名>"
+  auto-off-empty: "&e白名单已被清空，筛选模式自动关闭，已回到自由锁定"
+  error-need-value: "&c{mode} 后必须至少跟一个 ID，已忽略该参数"
+  error-player-as-entity: "&c不能用 minecraft:player 作为实体 ID（玩家请用 player 类）"
   unknown-id: "&c未知实体ID: &f{input} &7(可写 zombie 或 minecraft:zombie)"
+  alias-expanded: "&7提示: &f{input} &7是组别名，已展开为 &f{count} &7个实体 ID"
+  unknown-player: "&c找不到该玩家: &f{input}"
+  values-any-entity: "任意生物（未指定 ID）"
+  values-all-players: "所有玩家"
   list-header: "&6[Missile] &f当前目标筛选: &e{mode}"
-  list-types: "&7包含类型: &f{include} &7| 排除类型: &f{exclude}"
-  list-ids: "&7包含实体: &f{include} &7| 排除实体: &f{exclude}"
+  list-types: "&7启用类型: &f{types}"
+  list-ids: "&7实体白名单: &f{ids}"
+  list-players: "&7玩家白名单: &f{players}"
   none: "（无）"
 
 # 超级主动弹（/msl super_active）

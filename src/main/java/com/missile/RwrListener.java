@@ -9,8 +9,8 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 /**
  * RWR 事件侧：退出 / 死亡 / 重生时清理告警状态，避免 BossBar 残留或误报。
  *
- * <p>开机条件（背包内指南针）与威胁判定都交给每 tick 的 {@link RwrManager}，
- * 这里只处理需要立即失效的事件。
+ * <p>开机条件（{@code missile.use} + {@code /msl on} + 背包含指南针）与威胁判定都交给
+ * 每 tick 的 {@link RwrManager}，这里只处理需要立即失效的事件。
  */
 final class RwrListener implements Listener {
 

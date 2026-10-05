@@ -23,13 +23,21 @@ import org.bukkit.plugin.java.JavaPlugin;
  *   <li>聊天消息（自动加前缀）：{@code Lang.msg("command.no-permission")}</li>
  * </ul>
  *
- * <p>占位符写 {@code {name}}，参数为交替的「名称, 值」。文案中的 {@code &} 颜色代码会转换为 {@code §}。
+ * <p>文案来源与覆盖：先查 {@code config.yml} 的 {@code messages:} 板块
+ * （{@link Settings#messageOverride}），没有再回退到 {@code lang/<language>.yml}。
+ *
+ * <p>占位符写 {@code {name}}，参数为交替的「名称, 值」。颜色支持 {@code &} 代码（{@code &6} {@code &c}）
+ * 与十六进制 {@code &#RRGGBB}（展开为原版 {@code §x§R§R§G§G§B§B}）。
  * 缺失的 key 会返回 key 本身并在控制台告警一次，便于发现漏翻。
  */
 public final class Lang {
 
     /** 默认语言。 */
     public static final String DEFAULT_LOCALE = "zh_cn";
+
+    /** 十六进制颜色：{@code &#RRGGBB} 或原版 {@code &x&R&R&G&G&B&B}。 */
+    private static final Pattern HEX_COLOR =
+            Pattern.compile("&#([0-9a-fA-F]{6})|&[xX]((?:&[0-9a-fA-F]){6})");
 
     /** 颜色代码：&a &7 &l 等。 */
     private static final Pattern COLOR = Pattern.compile("&([0-9a-fk-orA-FK-OR])");
@@ -121,17 +129,50 @@ public final class Lang {
     }
 
     private static String raw(String key) {
-        Object value = configuration.get(key);
+        String override = Settings.messageOverride(key);
         String text;
-        if (value == null) {
-            if (MISSING.add(key) && owner != null) {
-                owner.getLogger().warning("语言文件 " + locale + " 缺少文案: " + key);
-            }
-            text = key;
+        if (override != null) {
+            text = override;                          // config.yml 的 messages 覆盖优先
         } else {
-            text = String.valueOf(value);
+            Object value = configuration.get(key);
+            if (value == null) {
+                if (MISSING.add(key) && owner != null) {
+                    owner.getLogger().warning("语言文件 " + locale + " 缺少文案: " + key);
+                }
+                text = key;
+            } else {
+                text = String.valueOf(value);
+            }
         }
-        Matcher matcher = COLOR.matcher(text);
-        return matcher.find() ? matcher.replaceAll("§$1") : text;
+        return colorize(text);
+    }
+
+    /**
+     * 颜色转换：{@code &} 代码与十六进制。
+     *
+     * <p>十六进制支持两种写法，都会展开成原版 {@code §x§R§R§G§G§B§B}（1.16+ 客户端可直接显示）：
+     * <ul>
+     *   <li>简写 {@code &#RRGGBB}（推荐）</li>
+     *   <li>原版写法 {@code &x&R&R&G&G&B&B}</li>
+     * </ul>
+     * config.yml 与 lang 文件里的文本走同一套转换。
+     */
+    public static String colorize(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        Matcher hex = HEX_COLOR.matcher(text);
+        StringBuilder expanded = new StringBuilder();
+        while (hex.find()) {
+            String digits = hex.group(1) != null ? hex.group(1) : hex.group(2).replace("&", "");
+            StringBuilder legacy = new StringBuilder("§x");
+            for (char digit : digits.toLowerCase(Locale.ROOT).toCharArray()) {
+                legacy.append('§').append(digit);
+            }
+            hex.appendReplacement(expanded, Matcher.quoteReplacement(legacy.toString()));
+        }
+        hex.appendTail(expanded);
+        Matcher matcher = COLOR.matcher(expanded.toString());
+        return matcher.find() ? matcher.replaceAll("§$1") : expanded.toString();
     }
 }

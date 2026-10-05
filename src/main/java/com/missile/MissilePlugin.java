@@ -1,5 +1,6 @@
 package com.missile;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -17,6 +18,18 @@ import org.bukkit.scheduler.BukkitTask;
  */
 public final class MissilePlugin extends JavaPlugin {
 
+    /** 插件版本号：写在代码内（按要求不放进 config.yml）。 */
+    public static final String VERSION = "1.0.2";
+
+    /**
+     * 全服导弹开关（{@code /msl global on|off}）：启动时取 msl_config.yml 的
+     * {@code missile.global-enabled}；运行期切换会**写回**该键（保留注释，见
+     * {@link Settings#writeGlobalEnabled}），除非把 {@code missile.persist-global-switch} 设为 false。
+     *
+     * <p>与玩家个人开关相互独立——两者都开启时该玩家才可用导弹。
+     */
+    private static boolean globalEnabled = true;
+
     /**
      * 玩家个人导弹开关：只记录**已关闭**的玩家（未记录 = 默认开启）。
      * 仅存内存，不写 config.yml，重启后全部恢复默认开启。
@@ -27,8 +40,10 @@ public final class MissilePlugin extends JavaPlugin {
     private MissileManager missiles;
     private SeekerListener seekers;
     private RwrManager rwr;
+    /** PlaceholderAPI 扩展（服务端没装 PAPI 时保持 null）。 */
+    private MissilePlaceholders placeholders;
+    private FilterStorage storage;
     private BukkitTask tickTask;
-    private boolean breakBlocks = true;
     private String language = Lang.DEFAULT_LOCALE;
 
     @Override
@@ -42,10 +57,11 @@ public final class MissilePlugin extends JavaPlugin {
             this.logFailure("释放 config.yml 失败", throwable);
         }
         try {
-            this.breakBlocks = this.getConfig().getBoolean("explosion.break-blocks", true);
-            this.language = this.getConfig().getString("language", Lang.DEFAULT_LOCALE);
+            Settings.load(this);                      // config.yml + msl_config.yml 单一入口，可热重载
+            this.language = Settings.language();
+            globalEnabled = Settings.missileGlobalEnabled(true);
         } catch (Throwable throwable) {
-            this.logFailure("读取 config.yml 失败", throwable);
+            this.logFailure("读取配置文件失败", throwable);
         }
         try {
             Lang.load(this, this.language);
@@ -76,6 +92,29 @@ public final class MissilePlugin extends JavaPlugin {
             return;
         }
         try {
+            // PlaceholderAPI 是软依赖：只有服务端装了它（plugin.yml 里已声明 softdepend）才注册扩展。
+            // MissilePlaceholders 继承 PAPI 的类，所以这里必须先判插件存在，再在 try 里首次引用它
+            // （没装 PAPI 时那份类根本不会被 JVM 解析，不会 NoClassDefFoundError）。
+            if (this.getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+                MissilePlaceholders expansion = new MissilePlaceholders(this);
+                if (expansion.register()) {
+                    this.placeholders = expansion;
+                    this.getLogger().info("已注册 PlaceholderAPI 扩展 msl：%msl% / %msl_entity_name% / "
+                            + "%msl_target_kind% / %msl_maws% 等");
+                } else {
+                    this.getLogger().warning("PlaceholderAPI 扩展 msl 注册失败（identifier 可能已被占用）");
+                }
+            }
+        } catch (Throwable throwable) {
+            this.logFailure("注册 PlaceholderAPI 扩展失败（插件继续运行，只是没有占位符）", throwable);
+        }
+        try {
+            this.storage = new FilterStorage(this);
+            this.storage.start();                    // 异步载入 + 定时脏检查保存
+        } catch (Throwable throwable) {
+            this.logFailure("筛选数据存储启动失败", throwable);
+        }
+        try {
             MissileCommand command = new MissileCommand(this);
             PluginCommand main = this.getCommand("missile");
             if (main == null) {
@@ -102,7 +141,7 @@ public final class MissilePlugin extends JavaPlugin {
         } catch (Throwable throwable) {
             this.logFailure("主任务启动失败", throwable);
         }
-        this.getLogger().info(Lang.get("console.enabled"));
+        this.getLogger().info("Missile v" + VERSION + " - " + Lang.get("console.enabled"));
     }
 
     /**
@@ -131,6 +170,13 @@ public final class MissilePlugin extends JavaPlugin {
         if (this.rwr != null) {
             this.rwr.shutdown();
         }
+        if (this.storage != null) {
+            this.storage.stop();                     // 停定时器 + 同步落盘一次
+        }
+        if (this.placeholders != null) {
+            this.placeholders.unregister();          // 注销 PAPI 扩展，避免重载后残留
+            this.placeholders = null;
+        }
     }
 
     public MissileManager missiles() {
@@ -141,18 +187,80 @@ public final class MissilePlugin extends JavaPlugin {
         return this.seekers;
     }
 
+    /** RWR / MAWS 管理器（占位符 {@code %msl_maws%} 要用它读缓存的方位）。 */
+    public RwrManager rwr() {
+        return this.rwr;
+    }
+
     public Random random() {
         return this.random;
     }
 
-    /** 战斗部是否破坏方块，读取 config.yml 的 explosion.break-blocks。 */
+    /** 战斗部是否破坏方块（来自 config.yml 的 explosion.break-blocks）。 */
     public boolean breakBlocks() {
-        return this.breakBlocks;
+        return Settings.breakBlocks();
     }
 
     /** 当前语言标识（如 zh_cn），读取 config.yml 的 language。 */
     public String language() {
         return this.language;
+    }
+
+    /** 全服导弹开关是否开启（静态，供事件监听器最前置判断）。 */
+    public static boolean isGlobalEnabled() {
+        return globalEnabled;
+    }
+
+    /** 切换全服导弹开关（仅内存；玩家个人设置不受影响）。 */
+    public static void setGlobalEnabled(boolean value) {
+        globalEnabled = value;
+    }
+
+    /**
+     * 把全服开关的值**写回** {@code msl_config.yml}（保留注释），供 {@code /msl global on|off} 调用。
+     *
+     * <p>只有 {@code missile.persist-global-switch: true}（默认）时才写盘；写盘失败只记日志——
+     * 内存里的开关**已经生效**，写盘只是为了重启后仍然记得。
+     */
+    public void persistGlobalSwitch(boolean value) {
+        if (!Settings.persistGlobalSwitch()) {
+            return;
+        }
+        File file = new File(this.getDataFolder(), Settings.MISSILE_CONFIG_FILE);
+        if (Settings.writeGlobalEnabled(file, value)) {
+            this.getLogger().info("全服导弹开关已写入 " + Settings.MISSILE_CONFIG_FILE + ": " + value);
+        } else {
+            this.getLogger().warning("未能把全服导弹开关写回 " + Settings.MISSILE_CONFIG_FILE
+                    + "（本次仅内存生效；可手工改配置或用 /msl global 再试）");
+        }
+    }
+
+    /**
+     * {@code /msl reload}：重读 config.yml、语言文件与平台级开关，并把待写筛选数据立刻落盘。
+     *
+     * @return 是否全部成功（任一阶段失败只记日志，不抛出）
+     */
+    public boolean reloadPluginSettings() {
+        boolean success = true;
+        try {
+            Settings.load(this);
+            this.language = Settings.language();
+            Lang.load(this, this.language);
+            this.language = Lang.locale();
+            globalEnabled = Settings.missileGlobalEnabled(globalEnabled);
+        } catch (Throwable throwable) {
+            success = false;
+            this.logFailure("热重载配置失败", throwable);
+        }
+        try {
+            if (this.storage != null) {
+                this.storage.saveNow();               // 顺手把筛选数据落盘
+            }
+        } catch (Throwable throwable) {
+            success = false;
+            this.logFailure("热重载时保存筛选数据失败", throwable);
+        }
+        return success;
     }
 
     /**

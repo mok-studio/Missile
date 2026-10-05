@@ -19,7 +19,7 @@ param(
     [string]$Branch = 'main',
     [string]$UserName = 'mok-studio',
     [string]$UserEmail = 'mok-studio@users.noreply.github.com',
-    [string]$Message = 'Missile 1.0.0: Paper 1.21.11 TNT 制导导弹插件（五种型号 + RWR + 目标筛选 + 多语言）'
+    [string]$Message = 'Missile 1.0.2: Paper 1.21.11 TNT 制导导弹插件（五种型号 + RWR + 目标筛选 + 多语言）'
 )
 
 $ErrorActionPreference = 'Stop'

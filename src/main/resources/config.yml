@@ -1,12 +1,58 @@
-# Missile 插件配置
-# 修改后执行 /reload confirm 或重启服务器生效。
+# ============================================================
+#  Missile 通用配置（config.yml）
+#  · 本文件只放**通用项**：语言 / 文案覆盖 / 目标筛选存储
+#  · 导弹参数（全服开关、型号、模型、发射与导引头、引信、战斗部、RWR、MAWS）
+#    全部在同目录的 msl_config.yml —— 改参数请去那个文件
+#  · 改完可用 /msl reload 热重载（需要 missile.admin 权限），不必重启
+#  · 颜色写法：& 代码（&6 &c &l …）与十六进制 &#RRGGBB 均支持
+# ============================================================
 
-# 语言文件：读取 lang/<language>.yml（插件内置 zh_cn 与 en_us，
-# 首次启动会释放到 plugins/Missile/lang/，可直接修改或新增语言）。
+# ------------------------------------------------------------
+# 语言
+# ------------------------------------------------------------
+# 默认文案来源：lang/<language>.yml（插件内置 zh_cn 与 en_us，
+# 首次启动释放到 plugins/Missile/lang/）。下方 messages 板块可逐条覆盖。
 language: zh_cn
 
-explosion:
-  # 战斗部爆炸是否破坏方块。
-  #   true  = 破坏地形并伤害实体（默认，符合 TNT 导弹的直觉）
-  #   false = 只伤害实体、不破坏方块（适合保护型服务器）
-  break-blocks: true
+# ------------------------------------------------------------
+# 文案覆盖（可选；不写的 key 继续用 lang 文件里的内容）
+# ------------------------------------------------------------
+# · key 与 lang/<language>.yml 完全一致（prefix、command.enabled、rwr.bossbar-missile …）
+# · 两种写法都支持：嵌套  command: { enabled: "…" }   或扁平  "command.enabled": "…"（扁平写法必须加引号）
+# · 支持 & 代码与 &#RRGGBB 十六进制颜色
+# · 下面的 %msl% / %msl_xxx% 是 PlaceholderAPI 占位符，导引头 ActionBar 内部也会替换它们
+#   （没装 PlaceholderAPI 也能用；装了的话 TAB / 计分板可以直接复用同一套写法）
+messages:
+  # prefix: "&6[Missile] &f"
+  # command.no-permission: "&c你不能使用导弹系统"
+  # command.enabled: "&#00FF88导弹已开启：手持 TNT 右键开启导引头"
+  # command.disabled: "&#FFAA00导弹已关闭"
+  # rwr.bossbar-missile: "&c⚠ 敌导弹 &f{dir}"
+  # ---- 导引头 ActionBar ----
+  # 可用占位符：%msl%（当前型号）、%msl_target_kind%（目标，按 /msl filter 内容判断）、
+  #            %msl_entity_name%（锁定目标名，无锁定时为"搜索中"）、%msl_lock%（整句锁定状态）
+  # "seeker.status": "&7%msl% &7| &f目标: %msl_target_kind% &7| &a锁定 &f%msl_entity_name% &7| &f按右键发射"
+  # ---- MAWS 告警条（%msl_maws% 会被换成方向箭头）----
+  # "maws.bossbar": "&c⚠ MAWS: %msl_maws%"
+
+# ------------------------------------------------------------
+# 目标筛选（/msl filter ...）数据持久化
+# ------------------------------------------------------------
+filter:
+  storage:
+    # JSON  = 存到下面的 json-file（默认，零依赖）
+    # MYSQL = 存到 MySQL；服务端需自备 mysql-connector-j，
+    #         检测不到驱动或连接失败时自动回退 JSON（本次运行内不再重试）
+    type: JSON
+    # 脏检查周期（秒）：内容有变化才写盘，全部在异步线程执行
+    auto-save-interval-seconds: 5
+    json-file: "data/filters.json"
+    mysql:
+      host: 127.0.0.1
+      port: 3306
+      database: minecraft
+      user: root
+      password: ""
+      table: missile_filters
+      use-ssl: false
+

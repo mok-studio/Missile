@@ -1,14 +1,19 @@
 package com.missile;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.World;
-import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -17,6 +22,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
@@ -32,16 +38,15 @@ import org.bukkit.util.Vector;
 public final class SeekerListener implements Listener {
 
     /** 锁定距离。 */
-    static final double LOCK_RANGE = 128.0D;
     /** 准星锥角半角（度），准星附近多人时取最近者。 */
-    static final double LOCK_CONE = 10.0D;
     /** 导引头提示刷新周期。 */
-    private static final int REFRESH_INTERVAL_TICKS = 2;
     /** 出膛点相对眼睛的前移距离。 */
-    private static final double MUZZLE_OFFSET = 1.2D;
 
     private final MissilePlugin plugin;
     private final Map<UUID, SeekerState> states = new HashMap<>();
+
+    /** 玩家丢出的干扰物：掉落物实体 UUID → 丢弃时的 tick（§2.4）。 */
+    private final Map<UUID, Integer> thrownDecoys = new HashMap<>();
     private int refreshTicks;
 
     SeekerListener(MissilePlugin plugin) {
@@ -67,7 +72,14 @@ public final class SeekerListener implements Listener {
         if (this.states.isEmpty()) {
             return;
         }
-        if (++this.refreshTicks < REFRESH_INTERVAL_TICKS) {
+        if (!MissilePlugin.isGlobalEnabled()) {
+            // 全服开关关闭：清空所有导引头（玩家个人设置保留），避免残留锁定与提示
+            for (SeekerState state : this.states.values()) {
+                state.disarm();
+            }
+            return;
+        }
+        if (++this.refreshTicks < Settings.seekerRefreshTicks()) {
             return;
         }
         this.refreshTicks = 0;
@@ -86,15 +98,16 @@ public final class SeekerListener implements Listener {
                 player.sendActionBar(Lang.get("seeker.closed"));
                 continue;
             }
-            state.updateLock(TargetSelector.select(player, LOCK_RANGE, LOCK_CONE, state.targetKind()));
-            player.sendActionBar(state.actionBar());
+            state.updateLock(state.selectLock(player));
+            player.sendActionBar(state.actionBar(this.plugin, player));
         }
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
-        // 该玩家的个人开关关闭：直接放行，其 TNT 恢复原版逻辑（其他玩家不受影响）
-        if (!MissilePlugin.isPlayerEnabled(event.getPlayer().getUniqueId())) {
+        // 全服开关关闭，或该玩家自己关闭了导弹：直接放行，TNT 走原版逻辑
+        if (!MissilePlugin.isGlobalEnabled()
+                || !MissilePlugin.isPlayerEnabled(event.getPlayer().getUniqueId())) {
             return;
         }
         if (event.getHand() != EquipmentSlot.HAND) {
@@ -122,36 +135,35 @@ public final class SeekerListener implements Listener {
 
     private void arm(Player player, SeekerState state) {
         state.arm();
-        state.updateLock(TargetSelector.select(player, LOCK_RANGE, LOCK_CONE, state.targetKind()));
-        player.sendActionBar(state.actionBar());
+        state.updateLock(state.selectLock(player));
+        player.sendActionBar(state.actionBar(this.plugin, player));
     }
 
     private void launch(Player player, SeekerState state) {
         MissileType type = state.type();
-        MissileType.TargetKind kind = state.targetKind();
-        // 驾束（semiLOS）不需要锁定目标，直接跟随准星；其余型号按锁定类型选目标
-        LivingEntity target = type.beamRiding()
-                ? null
-                : TargetSelector.select(player, LOCK_RANGE, LOCK_CONE, kind);
+        MissileType.TargetKind kind = state.lockKind();
+        // 驾束（semiLOS）不需要锁定目标，直接跟随准星；其余型号按"实际生效的锁定类型"选目标
+        // （IR 的 entity 模式与 usefilter 都是两段式/白名单判定，统一收在 SeekerState#selectLock 里）
+        Entity target = state.selectLock(player);
         if (target == null && !type.autonomous() && !type.beamRiding()) {
             state.updateLock(null);
             player.sendActionBar(Lang.get("seeker.need-illumination",
-                    "missile", type.displayName(), "kind", kindLabel(kind)));
+                    "missile", type.coloredName(), "kind", kindLabel(kind)));
             return;
         }
         Location eye = player.getEyeLocation();
         Vector direction = eye.getDirection().normalize();
-        Location origin = eye.clone().add(direction.clone().multiply(MUZZLE_OFFSET));
-        this.plugin.missiles().launch(player, type, target, origin, direction, kind);
+        Location origin = eye.clone().add(direction.clone().multiply(Settings.muzzleOffset()));
+        // §1.2：SA 要把"发射那一刻的锁定配置"作为快照一次性传给导弹（弹上重新截获沿用同一份配置）；
+        // 其它型号传 null，走原有的"类型 + 筛选白名单"判定。
+        SaProfile saProfile = type == MissileType.SUPER_ACTIVE ? state.saProfile() : null;
+        this.plugin.missiles().launch(player, type, target, origin, direction, kind, state.whitelistOnly(),
+                saProfile);
         this.consumeTnt(player);
         state.disarm();
-        String detail = type.beamRiding()
-                ? Lang.get("seeker.launched-beam")
-                : target == null
-                        ? Lang.get("seeker.launched-none")
-                        : Lang.get("seeker.launched-target", "target", describe(target));
-        player.sendActionBar(Lang.get("seeker.launched",
-                "missile", type.displayName(), "kind", kindLabel(kind), "detail", detail));
+        // §2.6：发射提示统一为一条（`&6%msl% &a已发射`），不再按是否锁定 / 是否驾束分叉。
+        // `%msl%` 由占位符渲染器替换（型号名自带颜色，见 §2.7）。
+        player.sendActionBar(MissilePlaceholders.render(this.plugin, player, Lang.get("seeker.launched")));
     }
 
     private void consumeTnt(Player player) {
@@ -203,25 +215,100 @@ public final class SeekerListener implements Listener {
         }
     }
 
+    /**
+     * 记录"玩家丢出的干扰物"（§2.4：手持无效，**只有丢出**才可能干扰）。
+     *
+     * <p>用 {@link Bukkit#getCurrentTick()} 打时间戳而不是自带计数器：
+     * 事件驱动的监听器没有 tick 钩子，时间戳让 TTL 判定与清理都能按需惰性完成。
+     */
+    @EventHandler(ignoreCancelled = true)
+    public void onDrop(PlayerDropItemEvent event) {
+        int now = currentTick();
+        this.thrownDecoys.put(event.getItemDrop().getUniqueId(), now);
+        // 顺手清理过期条目，避免长期运行时这张表无限增长（条目本身很小）
+        if (this.thrownDecoys.size() > 64) {
+            this.thrownDecoys.entrySet().removeIf(entry -> now - entry.getValue() > Settings.decoyTtlTicks());
+        }
+    }
+
+    /**
+     * 该掉落的干扰物是否"玩家刚丢出且仍在有效期内"。
+     *
+     * <p>不满足的三种情况都会返回 {@code false}：不是玩家丢的（发射器 / 漏斗 / 自然生成、
+     * 以及**插件重载前**就已经在地上的）、超过 {@code decoy.ttl-ticks}、已被查询过并清理。
+     */
+    public boolean isLiveDecoy(Item item) {
+        Integer droppedAt = this.thrownDecoys.get(item.getUniqueId());
+        if (droppedAt == null) {
+            return false;
+        }
+        if (currentTick() - droppedAt > Settings.decoyTtlTicks()) {
+            this.thrownDecoys.remove(item.getUniqueId());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 当前 tick。服务端 tick 是首选；取不到时（无服务端、或万一在异步上下文里被调用）
+     * 回退到 0 —— TTL 判定退化为"只看注入的时间戳"，不会因为一次 tick 读取把制导链打断。
+     */
+    private static int currentTick() {
+        try {
+            return Bukkit.getCurrentTick();
+        } catch (Throwable throwable) {
+            return 0;
+        }
+    }
+
     private static boolean holdsTnt(Player player) {
         return player.getInventory().getItemInMainHand().getType() == Material.TNT;
     }
 
     /** 锁定目标类型名，取自语言文件。 */
     static String kindLabel(MissileType.TargetKind kind) {
-        return Lang.get(kind == MissileType.TargetKind.ENTITY ? "kind.entity" : "kind.player");
+        if (kind == MissileType.TargetKind.ENTITY) {
+            return Lang.get("kind.entity");
+        }
+        if (kind == MissileType.TargetKind.ANY) {
+            return Lang.get("kind.any");
+        }
+        return Lang.get("kind.player");
     }
 
     /** 目标显示名：玩家用名字，生物用实体类型名。 */
-    static String describe(LivingEntity target) {
+    static String describe(Entity target) {
         return target instanceof Player player ? player.getName() : target.getType().name();
     }
 
     /** 玩家导引头状态：型号 + 开关 + 当前锁定。 */
     public static final class SeekerState {
 
+        /** 红外弹的工作模式（{@code /msl ir ...}）。 */
+        public enum IrMode {
+            /** 默认：玩家优先。 */
+            DEFAULT,
+            /** 等同默认（显式写 player）。 */
+            PLAYER,
+            /** 玩家优先；脱离玩家锁定后转为"任意实体"继续搜索。 */
+            ENTITY
+        }
+
         private MissileType missileType = MissileType.INFRARED;
-        private MissileType.TargetKind targetKind = MissileType.TargetKind.PLAYER;
+        private IrMode irMode = IrMode.DEFAULT;
+        private boolean irUseFilter;
+
+        /**
+         * SA（超级主动弹）的工作模式 + **safilter**（§1.2 的 `filter` 名单）。
+         *
+         * <p>与会话状态一致：**不持久化**（决策 #29，与决策 #15 同口径）；
+         * 与全局 {@link TargetFilter} 完全独立，互不影响。
+         */
+        private SaProfile.Mode saMode = SaProfile.Mode.ANY;
+        private final Set<String> saEntityIds = new LinkedHashSet<>();
+        private final Set<UUID> saPlayerIds = new LinkedHashSet<>();
+        private final Set<String> saPlayerNames = new LinkedHashSet<>();
+
         private boolean armed;
         private UUID targetId;
         private String targetName;
@@ -234,12 +321,176 @@ public final class SeekerListener implements Listener {
             this.missileType = type;
         }
 
-        public MissileType.TargetKind targetKind() {
-            return this.targetKind;
+        /**
+         * 本次制导**实际生效**的锁定类型（供 /msl status 显示、以及发射时传给导弹做弹上重截获）。
+         *
+         * <ul>
+         *   <li>{@code SUPER_ACTIVE} → {@link #saKind()}（由 {@link #saMode} 折算；旧命令
+         *       {@code /msl super_active default|entity|player} 仍可用）</li>
+         *   <li>{@code INFRARED} + {@code usefilter} → {@code ANY}：能锁谁完全由白名单决定</li>
+         *   <li>{@code INFRARED} + {@code entity} 模式 → {@code ANY}：玩家优先，丢失后转任意实体，
+         *       弹上重截获也允许两者</li>
+         *   <li>其余（{@code SEMI_ACTIVE} / {@code ACTIVE} / {@code SEMI_LOS}）→ 沿用原行为：只锁玩家</li>
+         * </ul>
+         */
+        public MissileType.TargetKind lockKind() {
+            if (this.missileType == MissileType.SUPER_ACTIVE) {
+                return saKind();
+            }
+            if (this.missileType == MissileType.INFRARED && (this.irUseFilter || this.irMode == IrMode.ENTITY)) {
+                return MissileType.TargetKind.ANY;
+            }
+            return MissileType.TargetKind.PLAYER;
         }
 
-        public void targetKind(MissileType.TargetKind targetKind) {
-            this.targetKind = targetKind == null ? MissileType.TargetKind.PLAYER : targetKind;
+        /** 是否把筛选白名单当作唯一候选集合（仅 {@code /msl ir ... usefilter}）。 */
+        public boolean whitelistOnly() {
+            return this.missileType == MissileType.INFRARED && this.irUseFilter;
+        }
+
+        /**
+         * 导引头此刻该锁谁（开导引头、每 2 tick 刷新、发射、切换型号后立刻重算，四处共用同一套判定）。
+         *
+         * <p>IR 的 {@code entity} 模式是**两段式**：先按默认工作方式找玩家，找不到玩家才转为找任意生物
+         * （对应"默认工作方式下搜索不到玩家脱离锁定之后，将锁定目标转换到任意实体"）。
+         * {@code usefilter} 走白名单通道：候选集合由白名单决定，距离 / 锥角 / 视线可达规则不变。
+         *
+         * @return 无锁定时返回 {@code null}
+         */
+        Entity selectLock(Player shooter) {
+            if (this.missileType.beamRiding()) {
+                return null;                      // 驾束弹不锁目标，跟随准星
+            }
+            boolean whitelistOnly = this.whitelistOnly();
+            double range = Settings.lockRange();
+            double cone = Settings.lockCone();
+            // 候选类别由 effectiveKind 折算：**筛选模式打开时以白名单启用的类别为准**
+            // （否则"玩家被白名单挡、生物被类型挡"，交集为空、什么都锁不上——用户 2026-10-05 反馈）
+            MissileType.TargetKind effective = TargetSelector.effectiveKind(shooter, this.lockKind(), whitelistOnly);
+            if (effective == MissileType.TargetKind.ANY) {
+                // 两类都允许 → 两段式：先玩家优先，找不到再退到任意目标
+                // （同时覆盖 IR 的 entity 模式与"白名单两类都启用"）
+                Entity player = TargetSelector.selectEntity(shooter, range, cone,
+                        MissileType.TargetKind.PLAYER, whitelistOnly);
+                if (player != null) {
+                    return player;
+                }
+                return TargetSelector.selectEntity(shooter, range, cone,
+                        MissileType.TargetKind.ANY, whitelistOnly);
+            }
+            return TargetSelector.selectEntity(shooter, range, cone, effective, whitelistOnly);
+        }
+
+        public IrMode irMode() {
+            return this.irMode;
+        }
+
+        public void irMode(IrMode irMode) {
+            this.irMode = irMode == null ? IrMode.DEFAULT : irMode;
+        }
+
+        /**
+         * 红外弹是否只按 filter 白名单挑目标（{@code /msl ir <模式> usefilter}）。
+         *
+         * <p>它只改变**候选目标集合**（必须命中白名单），不改变锁定逻辑：
+         * 距离 / 锥角 / 视线可达依旧生效（用户 2026-10-05 拍板）。
+         */
+        public boolean irUseFilter() {
+            return this.irUseFilter;
+        }
+
+        public void irUseFilter(boolean value) {
+            this.irUseFilter = value;
+        }
+
+        /**
+         * 当前 SA 锁定配置的**不可变快照**（发射时传给导弹，弹上重新截获用它判定）。
+         *
+         * <p>每次现取一份新副本：导弹拿到后，玩家之后再改 safilter 也不会影响已发射的那发。
+         */
+        public SaProfile saProfile() {
+            return new SaProfile(this.saMode, this.saEntityIds, this.saPlayerIds, this.saPlayerNames);
+        }
+
+        /** SA 当前工作模式。 */
+        public SaProfile.Mode saMode() {
+            return this.saMode;
+        }
+
+        /** 设置 SA 工作模式（{@code default|entity|player}）。 */
+        public void saMode(SaProfile.Mode mode) {
+            this.saMode = mode == null ? SaProfile.Mode.ANY : mode;
+        }
+
+        /** safilter 里的实体 ID（完整注册键，只读副本）。 */
+        public Set<String> saEntityIds() {
+            return Set.copyOf(this.saEntityIds);
+        }
+
+        /** safilter 里的玩家 UUID（只读副本）。 */
+        public Set<UUID> saPlayerIds() {
+            return Set.copyOf(this.saPlayerIds);
+        }
+
+        /** safilter 里的玩家名（小写，只读副本）。 */
+        public Set<String> saPlayerNames() {
+            return Set.copyOf(this.saPlayerNames);
+        }
+
+        /** 清空 safilter（保留当前模式）。 */
+        public void clearSaFilter() {
+            this.saEntityIds.clear();
+            this.saPlayerIds.clear();
+            this.saPlayerNames.clear();
+        }
+
+        /** {@code /msl super_active default}：回到任意目标 + 清空 safilter（决策 #27）。 */
+        public void saReset() {
+            this.saMode = SaProfile.Mode.ANY;
+            clearSaFilter();
+        }
+
+        /** 把实体 ID 写进 safilter（调用方负责先做规范化 / 别名展开）。 */
+        public void addSaEntityId(String id) {
+            if (id != null && !id.isEmpty()) {
+                this.saEntityIds.add(id);
+            }
+        }
+
+        /** 把玩家写进 safilter：UUID 为主、名字兜底（§1.2）。 */
+        public void addSaPlayer(UUID playerId, String playerName) {
+            if (playerId != null) {
+                this.saPlayerIds.add(playerId);
+            }
+            if (playerName != null && !playerName.isBlank()) {
+                this.saPlayerNames.add(playerName.toLowerCase(Locale.ROOT));
+            }
+        }
+
+        /**
+         * 兼容旧命令 {@code /msl super_active default|entity|player} 的锁定类型口径
+         * （R9 会被 {@code saMode} 的新语法取代，但状态显示与旧用法仍可用）。
+         *
+         * <p>注意：设置模式会**清空 safilter** —— "entity/player 不带 ID"的语义就是"不限制"。
+         */
+        public void saKind(MissileType.TargetKind kind) {
+            if (kind == MissileType.TargetKind.ENTITY) {
+                saMode(SaProfile.Mode.ENTITY);
+            } else if (kind == MissileType.TargetKind.PLAYER) {
+                saMode(SaProfile.Mode.PLAYER);
+            } else {
+                saMode(SaProfile.Mode.ANY);
+            }
+            clearSaFilter();
+        }
+
+        /** {@link #saMode} 折算出的锁定类型（供状态显示与旧调用点使用）。 */
+        public MissileType.TargetKind saKind() {
+            return switch (this.saMode) {
+                case ENTITY -> MissileType.TargetKind.ENTITY;
+                case PLAYER -> MissileType.TargetKind.PLAYER;
+                case ANY -> MissileType.TargetKind.ANY;
+            };
         }
 
         public boolean armed() {
@@ -264,7 +515,7 @@ public final class SeekerListener implements Listener {
             this.targetName = null;
         }
 
-        void updateLock(LivingEntity target) {
+        void updateLock(Entity target) {
             if (target == null) {
                 this.targetId = null;
                 this.targetName = null;
@@ -274,15 +525,39 @@ public final class SeekerListener implements Listener {
             this.targetName = describe(target);
         }
 
-        String actionBar() {
+        /**
+         * 导引头状态栏（ActionBar）。
+         *
+         * <p>模板来自语言文件的 {@code seeker.status}，可被 {@code config.yml} 的
+         * {@code messages:} 按同 key 覆盖；模板里的 {@code %msl%} / {@code %msl_target_kind%} /
+         * {@code %msl_entity_name%} 等由 {@link MissilePlaceholders#render} 替换 ——
+         * **与 PlaceholderAPI 共用同一套取值逻辑**，所以屏幕上看到的和 TAB 里显示的永远一致，
+         * 而且没装 PlaceholderAPI 的服务器同样能正常显示（不依赖 PAPI）。
+         *
+         * <p>调用点都直接传 {@link #states} 里的实例，而 {@code render} 内部也是按 UUID 查同一个实例，
+         * 因此不会出现两套状态。
+         *
+         * <p>**锁定时左右包裹**（§2.5）：已锁定目标时在文本两端各加一段 {@code launcher.lock-padding}
+         * （默认 {@code " &f&k1"}，即"一个空格 + 白色乱码"）。未锁定（搜索中）与驾束弹**不加**。
+         */
+        String actionBar(MissilePlugin plugin, Player player) {
             if (this.missileType.beamRiding()) {
-                return Lang.get("seeker.status-beam", "missile", this.missileType.displayName());
+                // 驾束弹没有"锁定"概念，固定文案、不包裹
+                return Lang.get("seeker.status-beam", "missile", this.missileType.coloredName());
             }
-            String lock = this.targetName == null
-                    ? Lang.get("seeker.lock-search")
-                    : Lang.get("seeker.lock-found", "target", this.targetName);
-            return Lang.get("seeker.status", "missile", this.missileType.displayName(),
-                    "kind", kindLabel(this.targetKind), "lock", lock);
+            String rendered = MissilePlaceholders.render(plugin, player, Lang.get("seeker.status"));
+            return this.targetName == null ? rendered : padLocked(rendered);
         }
+    }
+
+    /**
+     * 给"已锁定"的状态栏文本加左右包裹（§2.5）。
+     *
+     * <p>只对包裹段本身做一次着色，免得把模板或玩家名里可能出现的 {@code &} 当成色码。
+     * 配置写成空串时原样返回 —— 纯函数，脱离服务端也能验证。
+     */
+    static String padLocked(String rendered) {
+        String padding = Lang.colorize(Settings.seekerLockPadding());
+        return padding.isEmpty() ? rendered : padding + rendered + padding;
     }
 }

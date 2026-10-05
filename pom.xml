@@ -6,7 +6,7 @@
 
   <groupId>com.missile</groupId>
   <artifactId>Missile</artifactId>
-  <version>1.0.0</version>
+  <version>1.0.2</version>
   <packaging>jar</packaging>
   <name>Missile</name>
   <description>Guided missile plugin for Paper 1.21.11</description>
@@ -21,6 +21,22 @@
       <id>papermc</id>
       <url>https://repo.papermc.io/repository/maven-public/</url>
     </repository>
+    <!--
+      PlaceholderAPI 是软依赖（只在服务端装了 PAPI 时才用到那些类）。
+      仓库 id 必须叫 placeholderapi：本地仓库 .m2repo 里缓存的构件是按这个 id 记录的，
+      换成别的 id 会让 Maven 认为"缓存来自不可用的仓库"而去远端重新找，直接构建失败。
+      关掉 snapshots：不然 Maven 会为了 paper-api 的 SNAPSHOT 元数据去问这个仓库。
+    -->
+    <repository>
+      <id>placeholderapi</id>
+      <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
   </repositories>
 
   <dependencies>
@@ -28,6 +44,17 @@
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>
       <version>1.21.11-R0.1-SNAPSHOT</version>
+      <scope>provided</scope>
+    </dependency>
+    <!--
+      软依赖用 provided：编译期需要它的类型（PlaceholderExpansion），运行期由服务端的 PAPI 插件提供。
+      provided 不会被打进 jar（也不会被 shade），所以没装 PAPI 的服务器照样能加载本插件，
+      只是 /papi 里不会出现 msl 扩展。
+    -->
+    <dependency>
+      <groupId>me.clip</groupId>
+      <artifactId>placeholderapi</artifactId>
+      <version>2.11.6</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

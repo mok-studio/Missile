@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
@@ -13,7 +13,6 @@ import org.bukkit.util.Vector;
 public final class MissileManager {
 
     /** 同时存在的导弹上限，超出时丢弃最旧的一发。 */
-    private static final int MAX_ACTIVE = 64;
 
     private final MissilePlugin plugin;
     private final List<Missile> missiles = new ArrayList<>();
@@ -23,19 +22,42 @@ public final class MissileManager {
     }
 
     /** 发射一发导弹，默认锁定玩家。 */
-    public Missile launch(Player owner, MissileType type, LivingEntity target, Location origin, Vector direction) {
+    public Missile launch(Player owner, MissileType type, Entity target, Location origin, Vector direction) {
         return this.launch(owner, type, target, origin, direction, MissileType.TargetKind.PLAYER);
     }
 
     /** 发射一发导弹；驾束型号走 SemiLOSMissile，其余走 Missile。 */
-    public Missile launch(Player owner, MissileType type, LivingEntity target, Location origin, Vector direction,
+    public Missile launch(Player owner, MissileType type, Entity target, Location origin, Vector direction,
                           MissileType.TargetKind targetKind) {
-        while (this.missiles.size() >= MAX_ACTIVE) {
+        return this.launch(owner, type, target, origin, direction, targetKind, false);
+    }
+
+    /**
+     * 发射一发导弹；驾束型号走 SemiLOSMissile，其余走 Missile。
+     *
+     * @param whitelistOnly {@code true} = 弹上重新截获也只听发射者的筛选白名单
+     *                      （{@code /msl ir ... usefilter}；驾束弹不选目标，该参数对它无意义）
+     */
+    public Missile launch(Player owner, MissileType type, Entity target, Location origin, Vector direction,
+                          MissileType.TargetKind targetKind, boolean whitelistOnly) {
+        return this.launch(owner, type, target, origin, direction, targetKind, whitelistOnly, null);
+    }
+
+    /**
+     * 发射一发导弹（完整签名，§1.2 的"一份 SA 配置快照一次性传下去"）。
+     *
+     * @param saProfile 超级主动弹的锁定配置**快照**；其它型号传 {@code null}。
+     *                  非空时弹上重新截获走 SA 口径（**不看全局 filter**，决策 #29）。
+     */
+    public Missile launch(Player owner, MissileType type, Entity target, Location origin, Vector direction,
+                          MissileType.TargetKind targetKind, boolean whitelistOnly, SaProfile saProfile) {
+        while (this.missiles.size() >= Settings.maxActiveMissiles()) {
             this.missiles.remove(0).discard();
         }
         Missile missile = type.beamRiding()
                 ? new SemiLOSMissile(this.plugin, type, owner, origin, direction, target, targetKind)
-                : new Missile(this.plugin, type, owner, origin, direction, target, targetKind);
+                : new Missile(this.plugin, type, owner, origin, direction, target, targetKind, whitelistOnly,
+                        saProfile);
         this.missiles.add(missile);
         return missile;
     }
