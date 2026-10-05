@@ -24,7 +24,6 @@
 ## 2. 构建
 
 ```bash
-cd E:\ser_plugins\Missile
 mvn -s .mvn/local-repo-settings.xml -B clean package
 ```
 
