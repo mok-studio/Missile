@@ -17,6 +17,8 @@ Right-click with TNT in your main hand to arm the seeker and lock a target in yo
 | Config files | `config.yml` (general) + `msl_config.yml` (all missile parameters) |
 | Messages | `lang/zh_cn.yml` / `lang/en_us.yml` (121 : 121 keys), overridable per key via `messages:` in `config.yml` |
 
+Player manual: [English](docs/Player-Manual.md) | [简体中文](docs/玩家手册.md)
+
 ## 1. Build & Install
 
 | Step | Action |
@@ -183,6 +185,9 @@ The seeker ActionBar template `seeker.status` uses the same placeholders and is 
 .
 ├── README.md                          # this file (English)
 ├── README.zh-CN.md                    # Chinese version
+├── docs/
+│   ├── Player-Manual.md               # player manual (English)
+│   └── 玩家手册.md                     # player manual (Chinese)
 ├── pom.xml                            # paper-api + placeholderapi(provided)
 ├── .mvn/local-repo-settings.xml       # local repository settings for the build
 ├── scripts/                           # publish-to-github.ps1, check-line-endings.ps1
@@ -213,4 +218,4 @@ The seeker ActionBar template `seeker.status` uses the same placeholders and is 
         └── lang/zh_cn.yml, en_us.yml  # messages
 ```
 
-The player manual and the requirements document are not part of this repository (see `docs/latest/`).
+The requirements document is not part of this repository (see `docs/latest/`).

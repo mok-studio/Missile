@@ -17,6 +17,8 @@
 | 配置文件 | `config.yml`（通用项）+ `msl_config.yml`（全部导弹参数） |
 | 文案 | `lang/zh_cn.yml` / `lang/en_us.yml`（key 121 : 121），可用 `config.yml` 的 `messages:` 按 key 覆盖 |
 
+玩家手册：[简体中文](docs/玩家手册.md) | [English](docs/Player-Manual.md)
+
 ## 1. 构建与安装
 
 | 步骤 | 操作 |
@@ -183,6 +185,9 @@
 .
 ├── README.md                          # 英文版
 ├── README.zh-CN.md                    # 中文版（本文件）
+├── docs/
+│   ├── Player-Manual.md               # 玩家手册（英文）
+│   └── 玩家手册.md                     # 玩家手册（中文）
 ├── pom.xml                            # paper-api + placeholderapi(provided)
 ├── .mvn/local-repo-settings.xml       # 构建用的本地仓库设置（工作区内 .m2repo）
 ├── scripts/                           # publish-to-github.ps1、check-line-endings.ps1
@@ -212,3 +217,5 @@
         ├── msl_config.yml             # 导弹参数
         └── lang/zh_cn.yml, en_us.yml  # 文案
 ```
+
+需求文档不在本仓库内（见 `docs/latest/`）。
